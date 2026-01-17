@@ -45,26 +45,26 @@
 
 ### 任務清單
 
-- [ ] **2.1 修改 MarkdownParser.ts**
+- [x] **2.1 修改 MarkdownParser.ts**
   - 移除 `ChunkingOptions` 中的 `minChunkLength` 屬性
   - 移除 `DEFAULT_CHUNKING_OPTIONS` 中的 `minChunkLength: 50`
   - 移除 `parseChunks()` 中的 minimum length 檢查:
     - 第287行: `if (chunkContent.length >= this.chunkingOptions.minChunkLength)`
     - 第316行: `if (chunkContent.length >= this.chunkingOptions.minChunkLength)`
 
-- [ ] **2.2 修改 settings.ts**
+- [x] **2.2 修改 settings.ts**
   - 移除 `DEFAULT_CHUNKING_OPTIONS` 中的 `minChunkLength`
   - 移除 "Minimum Chunk Length" 設定 UI (第337-355行)
 
 ### 測試
 
-- [ ] **2.3 編譯測試**
+- [x] **2.3 編譯測試**
   - 執行 `npm run build` 確保無編譯錯誤
 
-- [ ] **2.4 功能測試**
-  - [ ] 確認 Settings UI 沒有 Minimum Chunk Length 設定
-  - [ ] 建立短內容的 heading section，確認仍被分割成 chunk
-  - [ ] Rebuild index，確認 chunks 正確產生
+- [x] **2.4 功能測試**
+  - [x] 確認 Settings UI 沒有 Minimum Chunk Length 設定
+  - [x] 建立短內容的 heading section，確認仍被分割成 chunk
+  - [x] Rebuild index，確認 chunks 正確產生
 
 ---
 

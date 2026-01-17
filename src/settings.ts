@@ -6,7 +6,6 @@ import { showWarning, showInfo, showSuccess, showError } from "./utils/notice";
 
 export const DEFAULT_CHUNKING_OPTIONS: ChunkingOptions = {
 	maxHeadingLevel: 2,
-	minChunkLength: 50,
 };
 
 export interface FolderFilterSettings {
@@ -315,27 +314,6 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
-
-		// Min Chunk Length
-		new Setting(containerEl)
-			.setName("Minimum Chunk Length")
-			.setDesc("Minimum characters for a chunk (smaller chunks will be merged)")
-			.addText((text) => {
-				text.inputEl.type = "number";
-				text.inputEl.min = "10";
-				text.inputEl.max = "500";
-				text.inputEl.style.width = "80px";
-				text
-					.setPlaceholder("50")
-					.setValue(String(this.plugin.settings.chunkingOptions.minChunkLength))
-					.onChange(async (value) => {
-						const num = parseInt(value, 10);
-						if (!isNaN(num) && num >= 10 && num <= 500) {
-							this.plugin.settings.chunkingOptions.minChunkLength = num;
-							await this.plugin.saveSettings();
-						}
-					});
-			});
 
 		// Chunking help text
 		const chunkingNote = containerEl.createEl("p", {

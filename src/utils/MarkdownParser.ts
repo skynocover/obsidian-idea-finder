@@ -30,7 +30,6 @@ export interface ParsedMetadata {
  */
 export interface ChunkingOptions {
 	maxHeadingLevel: number; // Split at headings up to this level (1-6), default 2
-	minChunkLength: number; // Minimum characters for a chunk, default 50
 }
 
 /**
@@ -47,7 +46,6 @@ export interface MarkdownParseResult {
 
 const DEFAULT_CHUNKING_OPTIONS: ChunkingOptions = {
 	maxHeadingLevel: 2,
-	minChunkLength: 50,
 };
 
 // ========================================
@@ -284,7 +282,7 @@ export class MarkdownParser {
 					// Save current chunk if it has content
 					if (currentChunk.lines.length > 0) {
 						const chunkContent = currentChunk.lines.join("\n").trim();
-						if (chunkContent.length >= this.chunkingOptions.minChunkLength) {
+						if (chunkContent.length > 0) {
 							chunks.push({
 								heading: currentChunk.heading,
 								headingLevel: currentChunk.headingLevel,
@@ -313,7 +311,7 @@ export class MarkdownParser {
 		// Don't forget the last chunk
 		if (currentChunk.lines.length > 0) {
 			const chunkContent = currentChunk.lines.join("\n").trim();
-			if (chunkContent.length >= this.chunkingOptions.minChunkLength) {
+			if (chunkContent.length > 0) {
 				chunks.push({
 					heading: currentChunk.heading,
 					headingLevel: currentChunk.headingLevel,
