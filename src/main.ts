@@ -11,7 +11,6 @@ import { TextSearchService } from "./services/TextSearchService";
 import { EmbeddingService } from "./services/EmbeddingService";
 import { VectorService } from "./services/VectorService";
 import { SearchWeightService } from "./services/SearchWeightService";
-import { EmbeddingMaintenanceService } from "./services/EmbeddingMaintenanceService";
 import { SearchHistoryService } from "./services/SearchHistoryService";
 import { SearchModal } from "./ui/SearchModal";
 import { SimilarNotesView, SIMILAR_NOTES_VIEW_TYPE } from "./ui/SimilarNotesView";
@@ -32,7 +31,6 @@ export default class IdeaFinderPlugin extends Plugin {
 	embeddingService: EmbeddingService;
 	vectorService: VectorService;
 	searchWeightService: SearchWeightService;
-	embeddingMaintenanceService: EmbeddingMaintenanceService;
 	searchHistoryService: SearchHistoryService;
 	logger: Logger;
 	private settingTab: IdeaFinderSettingTab;
@@ -119,8 +117,6 @@ export default class IdeaFinderPlugin extends Plugin {
 						showSuccess(`Idea Finder: Indexed ${total} notes`);
 						await this.textSearchService.rebuild();
 						this.settingTab?.refresh();
-						// Trigger embedding maintenance check after indexing
-						this.embeddingMaintenanceService?.checkForStaleEmbeddings();
 					},
 					onFileIndexed: async (path) => {
 						const note = this.noteRepo.getNoteByPath(path);
@@ -134,8 +130,6 @@ export default class IdeaFinderPlugin extends Plugin {
 									content,
 									note.filePath
 								);
-								// Notify maintenance service of file change
-								this.embeddingMaintenanceService?.notifyFileModified(file, "small");
 							}
 						}
 						this.settingTab?.refresh();
@@ -179,29 +173,8 @@ export default class IdeaFinderPlugin extends Plugin {
 				this.logger
 			);
 
-			// Initialize embedding maintenance service
-			this.embeddingMaintenanceService = new EmbeddingMaintenanceService(
-				this.app,
-				this.embeddingService,
-				this.vectorRepo,
-				this.noteRepo,
-				this.chunkRepo,
-				() => this.settings.jinaApiKey,
-				async () => await this.dbManager.save(),
-				{
-					enabled: this.settings.autoMaintainEmbeddings ?? true,
-					debounceDelayMs: 5000,
-					periodicCheckIntervalMs: 300000, // 5 minutes
-					showNotifications: true,
-				},
-				this.logger
-			);
-
 			// Start file watcher
 			this.fileWatcherService.startWatching();
-
-			// Start embedding maintenance service
-			this.embeddingMaintenanceService.start();
 
 			// Auto-index on first load if no notes indexed (uses progressive indexing)
 			const stats = this.indexerService.getStats();
@@ -434,11 +407,6 @@ export default class IdeaFinderPlugin extends Plugin {
 
 	async onunload() {
 		this.logger?.info("Idea Finder: Unloading plugin...");
-
-		// Stop embedding maintenance service
-		if (this.embeddingMaintenanceService) {
-			this.embeddingMaintenanceService.stop();
-		}
 
 		// Stop file watcher
 		if (this.fileWatcherService) {

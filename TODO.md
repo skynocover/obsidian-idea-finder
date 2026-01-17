@@ -74,10 +74,10 @@
 
 ### 任務清單
 
-- [ ] **3.1 刪除 EmbeddingMaintenanceService**
+- [x] **3.1 刪除 EmbeddingMaintenanceService**
   - 刪除檔案: `src/services/EmbeddingMaintenanceService.ts`
 
-- [ ] **3.2 從 main.ts 移除相關引用**
+- [x] **3.2 從 main.ts 移除相關引用**
   - 移除 `import { EmbeddingMaintenanceService }`
   - 移除 `embeddingMaintenanceService` 屬性宣告
   - 移除 `EmbeddingMaintenanceService` 初始化 (第183-198行)
@@ -86,7 +86,7 @@
   - 移除 `onFileIndexed` callback 中的 `this.embeddingMaintenanceService?.notifyFileModified()` (第138行)
   - 移除 `onunload()` 中的 `embeddingMaintenanceService.stop()` (第439-441行)
 
-- [ ] **3.3 從 settings.ts 移除相關設定**
+- [x] **3.3 從 settings.ts 移除相關設定**
   - 移除 `IdeaFinderSettings` 中的 `autoMaintainEmbeddings` 屬性
   - 移除 `DEFAULT_SETTINGS` 中的 `autoMaintainEmbeddings: true`
   - 移除 Settings UI 中的 "Auto-maintain Embeddings" toggle (第170-183行)
@@ -94,7 +94,7 @@
 
 ### 測試
 
-- [ ] **3.4 編譯測試**
+- [x] **3.4 編譯測試**
   - 執行 `npm run build` 確保無編譯錯誤
 
 - [ ] **3.5 功能測試**

@@ -32,7 +32,6 @@ export interface IdeaFinderSettings {
 	folderFilter: FolderFilterSettings;
 	searchWeights: SearchWeights;
 	chunkingOptions: ChunkingOptions;
-	autoMaintainEmbeddings: boolean; // Automatically regenerate stale embeddings
 }
 
 export const DEFAULT_SETTINGS: IdeaFinderSettings = {
@@ -45,7 +44,6 @@ export const DEFAULT_SETTINGS: IdeaFinderSettings = {
 	},
 	searchWeights: { ...DEFAULT_SEARCH_WEIGHTS },
 	chunkingOptions: { ...DEFAULT_CHUNKING_OPTIONS },
-	autoMaintainEmbeddings: true, // Enabled by default
 };
 
 export class IdeaFinderSettingTab extends PluginSettingTab {
@@ -163,32 +161,6 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 						}
 					})
 			);
-
-		// Auto-maintenance toggle
-		new Setting(containerEl)
-			.setName("Auto-maintain Embeddings")
-			.setDesc("Automatically regenerate embeddings when notes are modified (uses API quota)")
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.autoMaintainEmbeddings)
-					.onChange(async (value) => {
-						this.plugin.settings.autoMaintainEmbeddings = value;
-						await this.plugin.saveSettings();
-						// Update maintenance service
-						this.plugin.embeddingMaintenanceService?.setConfig({ enabled: value });
-					})
-			);
-
-		// Maintenance status display
-		const maintenanceStatus = this.plugin.embeddingMaintenanceService?.getStatus();
-		if (maintenanceStatus && maintenanceStatus.pendingTasks > 0) {
-			const statusEl = containerEl.createDiv({ cls: "vibe-maintenance-status" });
-			statusEl.setText(`${maintenanceStatus.pendingTasks} embeddings pending update`);
-			if (maintenanceStatus.isRunning) {
-				statusEl.addClass("mod-running");
-				statusEl.setText(`Updating embeddings: ${maintenanceStatus.processedTasks}/${maintenanceStatus.totalTasks}`);
-			}
-		}
 
 		// API Key Section
 		containerEl.createEl("h3", { text: "API Configuration" });
