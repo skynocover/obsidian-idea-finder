@@ -7,9 +7,10 @@ import type { FolderFilterSettings } from "../settings";
 /**
  * Check if a file path should be filtered out based on folder filter settings.
  * Used by both IndexerService and FileWatcherService to consistently filter paths.
+ * Only supports exclude mode - files matching configured folders will be excluded.
  *
  * @param filePath - The file path to check
- * @param folderFilter - The folder filter settings (include/exclude mode with folder list)
+ * @param folderFilter - The folder filter settings (folders to exclude)
  * @returns true if the path should be filtered out (excluded from processing)
  */
 export function shouldFilterPath(
@@ -20,11 +21,18 @@ export function shouldFilterPath(
 		return false; // No filter configured
 	}
 
-	// Check if the file path matches any configured folder
-	const matchesFilter = folderFilter.folders.some((folder) => {
-		// Normalize paths for comparison
+	const normalizedPath = filePath.replace(/\\/g, "/");
+
+	// Check if the file path matches any configured folder to exclude
+	return folderFilter.folders.some((folder) => {
+		// Normalize folder path
 		const normalizedFolder = folder.replace(/\\/g, "/").replace(/^\/|\/$/g, "");
-		const normalizedPath = filePath.replace(/\\/g, "/");
+
+		// Special case: root folder "/" or empty string matches files without any directory
+		if (normalizedFolder === "") {
+			// Root folder: match files that have no "/" in their path (direct children of vault root)
+			return !normalizedPath.includes("/");
+		}
 
 		// Check if the file is in this folder or a subfolder
 		return (
@@ -32,10 +40,4 @@ export function shouldFilterPath(
 			normalizedPath.startsWith(normalizedFolder + "/")
 		);
 	});
-
-	if (folderFilter.mode === "exclude") {
-		return matchesFilter; // Filter out if matches exclude list
-	} else {
-		return !matchesFilter; // Filter out if NOT in include list
-	}
 }

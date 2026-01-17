@@ -10,8 +10,7 @@ export const DEFAULT_CHUNKING_OPTIONS: ChunkingOptions = {
 };
 
 export interface FolderFilterSettings {
-	mode: "exclude" | "include";
-	folders: string[]; // Relative paths from vault root
+	folders: string[]; // Relative paths from vault root to exclude
 }
 
 export interface SearchWeights {
@@ -43,7 +42,6 @@ export const DEFAULT_SETTINGS: IdeaFinderSettings = {
 	semanticWeight: 0.7,
 	similarityThreshold: 30, // 30% minimum similarity
 	folderFilter: {
-		mode: "exclude",
 		folders: [],
 	},
 	searchWeights: { ...DEFAULT_SEARCH_WEIGHTS },
@@ -254,32 +252,17 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 			});
 
 		// Folder Filter Settings Section
-		containerEl.createEl("h3", { text: "Folder Filter" });
-
-		// Filter Mode
-		new Setting(containerEl)
-			.setName("Filter Mode")
-			.setDesc("Exclude: ignore selected folders. Include: only index selected folders.")
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOption("exclude", "Exclude folders")
-					.addOption("include", "Include only")
-					.setValue(this.plugin.settings.folderFilter.mode)
-					.onChange(async (value) => {
-						this.plugin.settings.folderFilter.mode = value as "exclude" | "include";
-						await this.plugin.saveSettings();
-					})
-			);
+		containerEl.createEl("h3", { text: "Exclude Folders" });
 
 		// Folder list
 		const folderSetting = new Setting(containerEl)
-			.setName("Folders")
-			.setDesc("Enter folder paths (one per line, relative to vault root)");
+			.setName("Folders to Exclude")
+			.setDesc("Enter folder paths to exclude from indexing (one per line). Use '/' for root folder files.");
 
 		const textArea = folderSetting.controlEl.createEl("textarea", {
 			cls: "vibe-folder-filter-textarea",
 			attr: {
-				placeholder: "Templates\nArchive\nDaily Notes",
+				placeholder: "/\nTemplates\nArchive\nDaily Notes",
 				rows: "5",
 			},
 		});
