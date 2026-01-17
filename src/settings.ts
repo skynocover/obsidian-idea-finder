@@ -1,8 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type IdeaFinderPlugin from "./main";
-import type { EmbeddingProgress } from "./services/EmbeddingService";
 import type { ChunkingOptions } from "./utils/MarkdownParser";
-import { showWarning, showInfo, showSuccess, showError } from "./utils/notice";
 
 export const DEFAULT_CHUNKING_OPTIONS: ChunkingOptions = {
 	maxHeadingLevel: 2,
@@ -49,7 +47,6 @@ export const DEFAULT_SETTINGS: IdeaFinderSettings = {
 export class IdeaFinderSettingTab extends PluginSettingTab {
 	plugin: IdeaFinderPlugin;
 	private statusContainer: HTMLElement | null = null;
-	private embeddingProgressEl: HTMLElement | null = null;
 
 	constructor(app: App, plugin: IdeaFinderPlugin) {
 		super(app, plugin);
@@ -63,104 +60,10 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 		// Header
 		containerEl.createEl("h2", { text: "Idea Finder Settings" });
 
-		// Index Status Section
-		containerEl.createEl("h3", { text: "Index Status" });
+		// Status Section
+		containerEl.createEl("h3", { text: "Status" });
 		this.statusContainer = containerEl.createDiv({ cls: "idea-finder-status" });
 		this.renderStatus();
-
-		// Embedding Section
-		containerEl.createEl("h3", { text: "Embeddings" });
-
-		// Embedding progress container
-		this.embeddingProgressEl = containerEl.createDiv({ cls: "vibe-embedding-progress" });
-		this.renderEmbeddingProgress({ current: 0, total: 0, status: "idle" });
-
-		new Setting(containerEl)
-			.setName("Generate Note Embeddings")
-			.setDesc("Generate vector embeddings for whole notes (legacy mode)")
-			.addButton((button) =>
-				button
-					.setButtonText("Generate")
-					.onClick(async () => {
-						if (!this.plugin.settings.jinaApiKey) {
-							showWarning("Please configure your Jina API key first");
-							return;
-						}
-						if (this.plugin.embeddingService?.isGenerating()) {
-							showInfo("Already generating embeddings...");
-							return;
-						}
-
-						button.setDisabled(true);
-						button.setButtonText("Generating...");
-
-						try {
-							const result = await this.plugin.embeddingService?.generateAll(
-								(progress) => this.renderEmbeddingProgress(progress)
-							);
-							if (result) {
-								showSuccess(
-									`Note embeddings complete: ${result.success} succeeded, ${result.failed} failed`
-								);
-							}
-							// Save database after generating
-							await this.plugin.dbManager?.save();
-							this.refresh();
-						} catch (error) {
-							showError(
-								`Embedding error: ${error instanceof Error ? error.message : "Unknown error"}`
-							);
-						} finally {
-							button.setDisabled(false);
-							button.setButtonText("Generate");
-							this.renderEmbeddingProgress({ current: 0, total: 0, status: "idle" });
-						}
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("Generate Chunk Embeddings")
-			.setDesc("Generate vector embeddings for content chunks (recommended for better precision)")
-			.addButton((button) =>
-				button
-					.setButtonText("Generate")
-					.setCta()
-					.onClick(async () => {
-						if (!this.plugin.settings.jinaApiKey) {
-							showWarning("Please configure your Jina API key first");
-							return;
-						}
-						if (this.plugin.embeddingService?.isGenerating()) {
-							showInfo("Already generating embeddings...");
-							return;
-						}
-
-						button.setDisabled(true);
-						button.setButtonText("Generating...");
-
-						try {
-							const result = await this.plugin.embeddingService?.generateChunkEmbeddings(
-								(progress) => this.renderEmbeddingProgress(progress)
-							);
-							if (result) {
-								showSuccess(
-									`Chunk embeddings complete: ${result.success} succeeded, ${result.failed} failed`
-								);
-							}
-							// Save database after generating
-							await this.plugin.dbManager?.save();
-							this.refresh();
-						} catch (error) {
-							showError(
-								`Embedding error: ${error instanceof Error ? error.message : "Unknown error"}`
-							);
-						} finally {
-							button.setDisabled(false);
-							button.setButtonText("Generate");
-							this.renderEmbeddingProgress({ current: 0, total: 0, status: "idle" });
-						}
-					})
-			);
 
 		// API Key Section
 		containerEl.createEl("h3", { text: "API Configuration" });
@@ -177,7 +80,6 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 						// Update embedding service with new key
 						this.plugin.embeddingService?.setApiKey(value);
-						this.renderStatus();
 					})
 			);
 
@@ -442,81 +344,14 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 		this.statusContainer.empty();
 
 		const stats = this.plugin.indexerService?.getStats();
-		const chunkStats = this.plugin.embeddingService?.getChunkEmbeddingCounts();
-		const apiKeyConfigured = !!this.plugin.settings.jinaApiKey;
 
-		// Notes count
-		new Setting(this.statusContainer)
-			.setName("Indexed Notes")
-			.setDesc(stats ? `${stats.totalNotes} notes` : "Not initialized");
-
-		// Embeddings count (note-level)
+		// Note Embeddings count
 		new Setting(this.statusContainer)
 			.setName("Note Embeddings")
 			.setDesc(
 				stats
-					? `${stats.totalEmbeddings}/${stats.totalNotes} notes (${stats.pendingEmbeddings} pending)`
+					? `${stats.totalEmbeddings}/${stats.totalNotes} notes`
 					: "Not initialized"
 			);
-
-		// Chunk embeddings count
-		new Setting(this.statusContainer)
-			.setName("Chunk Embeddings")
-			.setDesc(
-				chunkStats
-					? `${chunkStats.embedded}/${chunkStats.totalChunks} chunks (${chunkStats.pending} pending)`
-					: "Not initialized"
-			);
-
-		// API Key status
-		const apiStatusSetting = new Setting(this.statusContainer)
-			.setName("API Key")
-			.setDesc(apiKeyConfigured ? "Configured" : "Not configured");
-
-		if (apiKeyConfigured) {
-			apiStatusSetting.descEl.addClass("mod-success");
-		} else {
-			apiStatusSetting.descEl.addClass("mod-warning");
-		}
-
-		// Database status
-		const dbInitialized = this.plugin.dbManager?.isInitialized();
-		new Setting(this.statusContainer)
-			.setName("Database")
-			.setDesc(dbInitialized ? "Connected" : "Not initialized");
-	}
-
-	private renderEmbeddingProgress(progress: EmbeddingProgress): void {
-		if (!this.embeddingProgressEl) return;
-		this.embeddingProgressEl.empty();
-
-		if (progress.status === "idle" || progress.total === 0) {
-			return;
-		}
-
-		const percent = Math.round((progress.current / progress.total) * 100);
-
-		const progressContainer = this.embeddingProgressEl.createDiv({
-			cls: "vibe-progress-container",
-		});
-
-		const progressBar = progressContainer.createDiv({ cls: "vibe-progress-bar" });
-		const progressFill = progressBar.createDiv({ cls: "vibe-progress-fill" });
-		progressFill.style.width = `${percent}%`;
-
-		const progressText = progressContainer.createDiv({ cls: "vibe-progress-text" });
-		progressText.setText(`${progress.current}/${progress.total} (${percent}%)`);
-
-		if (progress.status === "error" && progress.error) {
-			const errorText = progressContainer.createDiv({ cls: "vibe-progress-error" });
-			errorText.setText(progress.error);
-		}
-	}
-
-	/**
-	 * Refresh the status display.
-	 */
-	refresh(): void {
-		this.renderStatus();
 	}
 }

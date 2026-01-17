@@ -116,8 +116,7 @@ export default class IdeaFinderPlugin extends Plugin {
 						this.hideIndexingProgress();
 						showSuccess(`Idea Finder: Indexed ${total} notes`);
 						await this.textSearchService.rebuild();
-						this.settingTab?.refresh();
-					},
+											},
 					onFileIndexed: async (path) => {
 						const note = this.noteRepo.getNoteByPath(path);
 						if (note) {
@@ -132,8 +131,7 @@ export default class IdeaFinderPlugin extends Plugin {
 								);
 							}
 						}
-						this.settingTab?.refresh();
-					},
+											},
 				},
 				{
 					getFolderFilter: () => this.settings.folderFilter,
