@@ -1,0 +1,240 @@
+/* Vibe Writing Plugin Styles */
+
+/* Settings page status indicators */
+.vibe-writing-status .status-ok {
+	color: var(--text-success);
+}
+
+.vibe-writing-status .status-warning {
+	color: var(--text-warning);
+}
+
+.vibe-writing-status .status-error {
+	color: var(--text-error);
+}
+
+/* Search Modal Styles */
+.vibe-writing-search-modal {
+	/* Make modal wider for better readability */
+}
+
+.vibe-writing-search-modal .prompt-results {
+	max-height: 400px;
+}
+
+.vibe-search-result {
+	padding: 8px 12px;
+}
+
+.vibe-search-result-title {
+	font-weight: 600;
+	font-size: 14px;
+	color: var(--text-normal);
+	margin-bottom: 2px;
+}
+
+.vibe-search-result-path {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-bottom: 4px;
+}
+
+.vibe-search-result-snippet {
+	font-size: 12px;
+	color: var(--text-muted);
+	line-height: 1.4;
+	/* Limit to 2 lines */
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.vibe-search-result-snippet mark {
+	background-color: var(--text-highlight-bg);
+	color: var(--text-normal);
+	padding: 0 2px;
+	border-radius: 2px;
+}
+
+.vibe-search-result-score {
+	font-size: 10px;
+	color: var(--text-faint);
+	margin-top: 4px;
+}
+
+/* Similar notes view styles (for Sprint 4) */
+.vibe-writing-similar-notes {
+	padding: 10px;
+}
+
+.vibe-similar-note-item {
+	padding: 8px;
+	margin-bottom: 4px;
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.vibe-similar-note-item:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.vibe-similar-note-title {
+	font-weight: 500;
+	margin-bottom: 2px;
+}
+
+.vibe-similar-note-score {
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.vibe-similar-header h4 {
+	margin: 0 0 10px 0;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.vibe-similar-empty {
+	color: var(--text-muted);
+	font-size: 12px;
+	text-align: center;
+	padding: 20px;
+}
+
+.vibe-similar-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+/* Embedding Progress Bar Styles */
+.vibe-embedding-progress {
+	margin: 10px 0;
+}
+
+.vibe-progress-container {
+	padding: 10px;
+	background-color: var(--background-secondary);
+	border-radius: 6px;
+}
+
+.vibe-progress-bar {
+	height: 8px;
+	background-color: var(--background-modifier-border);
+	border-radius: 4px;
+	overflow: hidden;
+	margin-bottom: 8px;
+}
+
+.vibe-progress-fill {
+	height: 100%;
+	background-color: var(--interactive-accent);
+	border-radius: 4px;
+	transition: width 0.3s ease;
+}
+
+.vibe-progress-text {
+	font-size: 12px;
+	color: var(--text-muted);
+	text-align: center;
+}
+
+.vibe-progress-error {
+	font-size: 12px;
+	color: var(--text-error);
+	margin-top: 8px;
+	text-align: center;
+}
+
+/* Settings status indicators */
+.setting-item-description.mod-success {
+	color: var(--text-success);
+}
+
+.setting-item-description.mod-warning {
+	color: var(--text-warning);
+}
+
+/* Weight display */
+.vibe-weight-display {
+	padding: 8px 12px;
+	margin-bottom: 8px;
+	background-color: var(--background-secondary);
+	border-radius: 6px;
+	font-size: 13px;
+	color: var(--text-muted);
+	text-align: center;
+}
+
+.vibe-threshold-display {
+	padding: 6px 12px;
+	margin-bottom: 8px;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+/* Status bar button */
+.vibe-similar-status-btn {
+	cursor: pointer;
+	padding: 0 8px;
+}
+
+.vibe-similar-status-btn:hover {
+	color: var(--text-accent);
+}
+
+/* View header action button */
+.vibe-similar-action {
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.vibe-similar-action:hover {
+	color: var(--text-accent);
+}
+
+.vibe-similar-action svg {
+	width: 18px;
+	height: 18px;
+}
+
+/* Similar Notes Status Bar */
+.vibe-similar-status {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 0;
+	margin-bottom: 10px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vibe-similar-status-text {
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+.vibe-similar-status-ok {
+	color: var(--text-success);
+}
+
+.vibe-similar-embed-btn {
+	font-size: 11px;
+	padding: 4px 10px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.vibe-similar-embed-btn:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
+.vibe-similar-embed-btn:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}

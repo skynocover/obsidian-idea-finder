@@ -1,0 +1,40 @@
+{
+	"name": "idea-finder",
+	"version": "1.0.0",
+	"description": "Semantic search and similar notes powered by AI embeddings",
+	"main": "main.js",
+	"author": "skynocover",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/skynocover/obsidian-idea-finder.git"
+	},
+	"bugs": {
+		"url": "https://github.com/skynocover/obsidian-idea-finder/issues"
+	},
+	"homepage": "https://github.com/skynocover/obsidian-idea-finder#readme",
+	"scripts": {
+		"dev": "node esbuild.config.mjs --watch",
+		"build": "node esbuild.config.mjs",
+		"setup": "node scripts/link-plugin.js"
+	},
+	"keywords": [
+		"obsidian",
+		"plugin",
+		"semantic-search",
+		"embeddings",
+		"ai",
+		"similar-notes"
+	],
+	"dependencies": {
+		"minisearch": "^7.0.0",
+		"sql.js": "^1.10.0"
+	},
+	"devDependencies": {
+		"@types/node": "^20.11.0",
+		"@types/sql.js": "^1.4.9",
+		"esbuild": "^0.20.0",
+		"obsidian": "latest",
+		"typescript": "^5.3.0"
+	}
+}
