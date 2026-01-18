@@ -65,7 +65,6 @@ export default class IdeaFinderPlugin extends Plugin {
 
 			this.embeddingService = new EmbeddingService(
 				this.app,
-				this.noteRepo,
 				this.vectorRepo,
 				this.settings.jinaApiKey,
 				this.chunkRepo,

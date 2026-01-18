@@ -13,14 +13,6 @@ export interface NoteRow {
 	indexed_at: number;
 }
 
-// ===== Embeddings Table =====
-
-export interface EmbeddingRow {
-	note_id: string;
-	vector: Uint8Array;
-	content_hash: string;
-}
-
 // ===== Note Tags Table =====
 
 export interface NoteTagRow {
@@ -63,13 +55,6 @@ export interface ChunkEmbeddingRow {
 }
 
 // ===== Join Query Results =====
-
-export interface NoteWithEmbeddingRow {
-	note_id: string;
-	title: string;
-	file_path: string;
-	vector: Uint8Array;
-}
 
 export interface ChunkWithNoteRow {
 	chunk_id: string;

@@ -343,14 +343,14 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 		if (!this.statusContainer) return;
 		this.statusContainer.empty();
 
-		const stats = this.plugin.indexerService?.getStats();
+		const counts = this.plugin.vectorRepo?.getNoteEmbeddingCounts();
 
-		// Note Embeddings count
+		// Embeddings count
 		new Setting(this.statusContainer)
-			.setName("Note Embeddings")
+			.setName("Embeddings")
 			.setDesc(
-				stats
-					? `${stats.totalEmbeddings}/${stats.totalNotes} notes`
+				counts
+					? `${counts.embedded}/${counts.total} notes`
 					: "Not initialized"
 			);
 	}

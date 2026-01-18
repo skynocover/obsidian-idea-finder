@@ -95,11 +95,10 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 			return this.cachedResults;
 		}
 
-		// If no embeddings (note or chunk level), use keyword search only
-		const hasNoteEmbeddings = this.vectorService?.hasAnyEmbeddings() ?? false;
-		const hasChunkEmbeddings = this.vectorService?.hasChunkEmbeddings() ?? false;
+		// If no embeddings, use keyword search only
+		const hasEmbeddings = this.vectorService?.hasAnyEmbeddings() ?? false;
 
-		if (!hasNoteEmbeddings && !hasChunkEmbeddings) {
+		if (!hasEmbeddings) {
 			this.cachedResults = await this.keywordSearch(parsedQuery.textQuery);
 			this.cachedResults = this.applyFilters(this.cachedResults, parsedQuery);
 			return this.cachedResults;
@@ -283,8 +282,8 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 
 			if (this.vectorService) {
 				try {
-					// smartSearch will use chunk embeddings if available, otherwise note embeddings
-					semanticResults = await this.vectorService.smartSearch(query, 30);
+					// Search using chunk embeddings
+					semanticResults = await this.vectorService.search(query, 30);
 				} catch (error) {
 					this.logger?.error("SearchModal: Semantic search failed:", error);
 					semanticFailed = true;

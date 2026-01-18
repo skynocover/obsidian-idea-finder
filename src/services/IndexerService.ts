@@ -362,7 +362,7 @@ export class IndexerService {
 	removeFile(path: string): void {
 		const note = this.noteRepo.getNoteByPath(path);
 		if (note) {
-			// Delete chunk embeddings first (if available)
+			// Delete chunk embeddings first (before deleting chunks)
 			if (this.vectorRepo) {
 				this.vectorRepo.deleteChunkEmbeddingsByNoteId(note.id);
 			}
@@ -370,11 +370,6 @@ export class IndexerService {
 			// Delete chunks (if available)
 			if (this.chunkRepo) {
 				this.chunkRepo.deleteChunksByNoteId(note.id);
-			}
-
-			// Delete note embedding
-			if (this.vectorRepo) {
-				this.vectorRepo.deleteNoteEmbedding(note.id);
 			}
 
 			// Delete the note
@@ -527,11 +522,6 @@ export class IndexerService {
 			for (const noteId of noteIdsToDelete) {
 				this.chunkRepo.deleteChunksByNoteId(noteId);
 			}
-		}
-
-		// Batch delete note embeddings (foreign key relationship)
-		if (this.vectorRepo) {
-			this.vectorRepo.deleteNoteEmbeddings(noteIdsToDelete);
 		}
 
 		// Batch delete notes

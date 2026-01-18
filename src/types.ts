@@ -6,19 +6,6 @@ export interface Note {
 	indexedAt: number; // Unix timestamp
 }
 
-export interface Embedding {
-	noteId: string;
-	vector: number[];
-	contentHash: string;
-}
-
-export interface NoteWithEmbedding {
-	noteId: string;
-	title: string;
-	filePath: string;
-	vector: number[];
-}
-
 export interface IndexerStats {
 	totalNotes: number;
 	totalEmbeddings: number;
@@ -26,7 +13,7 @@ export interface IndexerStats {
 	lastIndexedAt: number | null;
 }
 
-// Chunk types for Phase 3
+// Chunk types
 export interface Chunk {
 	id: string;
 	noteId: string;

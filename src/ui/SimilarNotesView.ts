@@ -96,7 +96,7 @@ export class SimilarNotesView extends ItemView {
 		if (!this.statusEl) return;
 		this.statusEl.empty();
 
-		const counts = this.vectorRepo.getEmbeddingCounts();
+		const counts = this.vectorRepo.getNoteEmbeddingCounts();
 
 		// Only show status when there are pending notes
 		if (counts.pending > 0) {
@@ -154,8 +154,8 @@ export class SimilarNotesView extends ItemView {
 			return;
 		}
 
-		// Check if note has embedding
-		if (!this.vectorService.hasEmbedding(note.id)) {
+		// Check if note has embeddings
+		if (!this.vectorService.hasEmbeddings(note.id)) {
 			this.contentEl.createEl("p", {
 				text: "No embedding for this note. Generate embeddings in settings.",
 				cls: "vibe-similar-empty",

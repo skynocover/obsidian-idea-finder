@@ -1,10 +1,8 @@
 import { requestUrl, type App, type RequestUrlResponse } from "obsidian";
 import type { VectorRepository } from "../database/repositories/VectorRepository";
-import type { NoteRepository } from "../database/repositories/NoteRepository";
 import type { ChunkRepository } from "../database/repositories/ChunkRepository";
 import type { Chunk } from "../types";
 import { sleep } from "../utils/vector";
-import { readFileContent } from "../utils/file";
 import type { Logger } from "../utils/Logger";
 import {
 	RateLimitError,
@@ -52,25 +50,21 @@ export interface EmbeddingProgress {
 
 export class EmbeddingService {
 	private app: App;
-	private noteRepo: NoteRepository;
 	private vectorRepo: VectorRepository;
-	private chunkRepo: ChunkRepository | null;
+	private chunkRepo: ChunkRepository;
 	private apiKey: string;
 	private isRunning = false;
 	private abortRequested = false;
-	private currentRetryAttempt = 0;
 	private logger: Logger | null;
 
 	constructor(
 		app: App,
-		noteRepo: NoteRepository,
 		vectorRepo: VectorRepository,
 		apiKey: string,
-		chunkRepo: ChunkRepository | null = null,
+		chunkRepo: ChunkRepository,
 		logger: Logger | null = null
 	) {
 		this.app = app;
-		this.noteRepo = noteRepo;
 		this.vectorRepo = vectorRepo;
 		this.chunkRepo = chunkRepo;
 		this.apiKey = apiKey;
@@ -101,7 +95,6 @@ export class EmbeddingService {
 		for (let attempt = 0; attempt <= BACKOFF_CONFIG.maxRetries; attempt++) {
 			try {
 				const result = await fn();
-				this.currentRetryAttempt = 0; // Reset on success
 				return result;
 			} catch (error) {
 				lastError = error as EmbeddingError | Error;
@@ -134,7 +127,7 @@ export class EmbeddingService {
 	}
 
 	/**
-	 * Generate embeddings for all notes that need them.
+	 * Generate embeddings for all chunks that need them.
 	 */
 	async generateAll(
 		onProgress?: (progress: EmbeddingProgress) => void
@@ -145,122 +138,6 @@ export class EmbeddingService {
 
 		if (!this.apiKey) {
 			throw new ConfigurationError();
-		}
-
-		this.isRunning = true;
-		this.abortRequested = false;
-
-		const notesNeedingEmbedding = this.vectorRepo.getNotesNeedingEmbedding();
-		const total = notesNeedingEmbedding.length;
-		let success = 0;
-		let failed = 0;
-
-		onProgress?.({ current: 0, total, status: "running" });
-
-		try {
-			// Process in batches
-			for (let i = 0; i < notesNeedingEmbedding.length; i += API_BATCH_SIZE) {
-				if (this.abortRequested) {
-					break;
-				}
-
-				const batch = notesNeedingEmbedding.slice(i, i + API_BATCH_SIZE);
-
-				// Read content from vault for each note
-				const textsWithContent: Array<{ note: typeof batch[0]; content: string }> = [];
-				for (const note of batch) {
-					const content = await readFileContent(this.app, note.filePath);
-					if (content !== null) {
-						textsWithContent.push({
-							note,
-							content: content.length > MAX_TEXT_LENGTH
-								? content.slice(0, MAX_TEXT_LENGTH)
-								: content,
-						});
-					}
-				}
-
-				if (textsWithContent.length === 0) {
-					continue; // Skip if no content could be read
-				}
-
-				const texts = textsWithContent.map((item) => item.content);
-
-				try {
-					// Use retry wrapper with exponential backoff
-					const embeddings = await this.withRetry(
-						() => this.embed(texts),
-						(attempt, delay, error) => {
-							this.logger?.debug(`Embedding: Batch retry ${attempt}: ${error.code} - waiting ${Math.round(delay / 1000)}s`);
-						}
-					);
-
-					// Save embeddings to database
-					for (let j = 0; j < textsWithContent.length; j++) {
-						const { note } = textsWithContent[j];
-						const embedding = embeddings[j];
-						if (embedding) {
-							this.vectorRepo.upsertNoteEmbedding(note.id, embedding, note.contentHash);
-							success++;
-						}
-					}
-				} catch (error) {
-					this.logger?.error("Embedding: Batch failed:", error);
-					failed += batch.length;
-
-					// Non-retryable errors should stop the entire process
-					if (error instanceof AuthenticationError || error instanceof QuotaExceededError) {
-						onProgress?.({
-							current: i,
-							total,
-							status: "error",
-							error: error instanceof Error ? error.message : "Unknown error",
-						});
-						throw error;
-					}
-				}
-
-				onProgress?.({
-					current: Math.min(i + API_BATCH_SIZE, total),
-					total,
-					status: "running",
-				});
-
-				// Small delay between batches to avoid rate limiting
-				if (i + API_BATCH_SIZE < notesNeedingEmbedding.length) {
-					await sleep(500);
-				}
-			}
-
-			onProgress?.({
-				current: total,
-				total,
-				status: this.abortRequested ? "idle" : "completed",
-			});
-
-			return { success, failed };
-		} finally {
-			this.isRunning = false;
-		}
-	}
-
-	/**
-	 * Generate embeddings for all chunks that need them.
-	 * This is the primary method for chunk-based semantic search.
-	 */
-	async generateChunkEmbeddings(
-		onProgress?: (progress: EmbeddingProgress) => void
-	): Promise<{ success: number; failed: number }> {
-		if (this.isRunning) {
-			throw new ConcurrencyError();
-		}
-
-		if (!this.apiKey) {
-			throw new ConfigurationError();
-		}
-
-		if (!this.chunkRepo) {
-			throw new ConfigurationError("Chunk repository not configured");
 		}
 
 		this.isRunning = true;
@@ -303,7 +180,7 @@ export class EmbeddingService {
 					const embeddings = await this.withRetry(
 						() => this.embed(texts),
 						(attempt, delay, error) => {
-							this.logger?.debug(`Embedding: Chunk batch retry ${attempt}: ${error.code} - waiting ${Math.round(delay / 1000)}s`);
+							this.logger?.debug(`Embedding: Batch retry ${attempt}: ${error.code} - waiting ${Math.round(delay / 1000)}s`);
 						}
 					);
 
@@ -321,7 +198,7 @@ export class EmbeddingService {
 						}
 					}
 				} catch (error) {
-					this.logger?.error("Embedding: Chunk batch failed:", error);
+					this.logger?.error("Embedding: Batch failed:", error);
 					failed += batch.length;
 
 					// Non-retryable errors should stop the entire process
@@ -361,17 +238,17 @@ export class EmbeddingService {
 	}
 
 	/**
-	 * Check if chunk embeddings are available.
+	 * Check if embeddings are available.
 	 */
-	hasChunkEmbeddings(): boolean {
-		return this.vectorRepo.hasAnyChunkEmbeddings();
+	hasEmbeddings(): boolean {
+		return this.vectorRepo.hasAnyEmbeddings();
 	}
 
 	/**
-	 * Get chunk embedding statistics.
+	 * Get embedding statistics.
 	 */
-	getChunkEmbeddingCounts(): { totalChunks: number; embedded: number; pending: number } {
-		return this.vectorRepo.getChunkEmbeddingCounts();
+	getEmbeddingCounts(): { total: number; embedded: number; pending: number } {
+		return this.vectorRepo.getEmbeddingCounts();
 	}
 
 	/**
