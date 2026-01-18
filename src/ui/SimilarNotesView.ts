@@ -1,5 +1,5 @@
 import { ItemView, WorkspaceLeaf, TFile } from "obsidian";
-import type { VectorService, SimilarNote } from "../services/VectorService";
+import type { VectorService, SimilarChunk } from "../services/VectorService";
 import type { NoteRepository } from "../database/repositories/NoteRepository";
 import type { VectorRepository } from "../database/repositories/VectorRepository";
 import type { IdeaFinderSettings } from "../settings";
@@ -163,11 +163,11 @@ export class SimilarNotesView extends ItemView {
 			return;
 		}
 
-		// Get similar notes with threshold from settings
+		// Get similar chunks with threshold from settings
 		const threshold = this.getSettings().similarityThreshold / 100; // Convert from % to 0-1
-		const similarNotes = this.vectorService.getSimilarNotes(note.id, SIMILAR_NOTES_LIMIT, threshold);
+		const similarChunks = this.vectorService.getSimilarChunks(note.id, SIMILAR_NOTES_LIMIT, threshold);
 
-		if (similarNotes.length === 0) {
+		if (similarChunks.length === 0) {
 			this.contentEl.createEl("p", {
 				text: `No similar notes found (threshold: ${this.getSettings().similarityThreshold}%)`,
 				cls: "vibe-similar-empty",
@@ -175,25 +175,45 @@ export class SimilarNotesView extends ItemView {
 			return;
 		}
 
-		// Render similar notes
+		// Render similar chunks
 		const list = this.contentEl.createEl("div", { cls: "vibe-similar-list" });
 
-		for (const similarNote of similarNotes) {
+		for (const chunk of similarChunks) {
 			const item = list.createEl("div", { cls: "vibe-similar-note-item" });
 
 			const titleEl = item.createEl("div", { cls: "vibe-similar-note-title" });
-			titleEl.setText(similarNote.title);
+			// Display as "Note Title / Heading" or just "Note Title" if no heading
+			if (chunk.heading) {
+				titleEl.setText(`${chunk.noteTitle} / ${chunk.heading}`);
+			} else {
+				titleEl.setText(chunk.noteTitle);
+			}
 
 			const scoreEl = item.createEl("div", { cls: "vibe-similar-note-score" });
-			scoreEl.setText(`${similarityToPercent(similarNote.similarity)}% similar`);
+			scoreEl.setText(`${similarityToPercent(chunk.similarity)}% similar`);
 
-			// Click to open file in vertical split (side by side)
+			// Click to open file and jump to chunk position
 			item.addEventListener("click", async () => {
-				const file = this.app.vault.getAbstractFileByPath(similarNote.filePath);
+				const file = this.app.vault.getAbstractFileByPath(chunk.filePath);
 				if (file instanceof TFile) {
 					// Open in vertical split (left/right side by side)
 					const leaf = this.app.workspace.getLeaf("split", "vertical");
 					await leaf.openFile(file);
+
+					// Jump to specific line if available
+					if (chunk.startLine > 0) {
+						const view = leaf.view;
+						if (view.getViewType() === "markdown") {
+							const editor = (view as any).editor;
+							if (editor) {
+								editor.setCursor({ line: chunk.startLine - 1, ch: 0 });
+								editor.scrollIntoView(
+									{ from: { line: chunk.startLine - 1, ch: 0 }, to: { line: chunk.startLine - 1, ch: 0 } },
+									true
+								);
+							}
+						}
+					}
 				}
 			});
 		}

@@ -14,10 +14,13 @@ export interface SemanticSearchResult {
 	similarity: number;
 }
 
-export interface SimilarNote {
+export interface SimilarChunk {
+	chunkId: string;
 	noteId: string;
-	title: string;
+	noteTitle: string;
+	heading: string | null;
 	filePath: string;
+	startLine: number;
 	similarity: number;
 }
 
@@ -88,17 +91,17 @@ export class VectorService {
 	}
 
 	/**
-	 * Get similar notes for a given note ID.
-	 * Uses chunk embeddings - finds similar chunks from other notes and aggregates.
-	 * @param noteId The note ID to find similar notes for
+	 * Get similar chunks for a given note ID.
+	 * Uses chunk embeddings - finds similar chunks from other notes.
+	 * @param noteId The note ID to find similar chunks for
 	 * @param limit Maximum number of results
 	 * @param minSimilarity Minimum similarity threshold (0-1), defaults to 0.3
 	 */
-	getSimilarNotes(
+	getSimilarChunks(
 		noteId: string,
 		limit: number = DEFAULT_SEARCH_LIMIT,
 		minSimilarity: number = DEFAULT_MIN_SIMILARITY
-	): SimilarNote[] {
+	): SimilarChunk[] {
 		// Get the target note's chunk embeddings
 		const targetChunks = this.vectorRepo.getChunkEmbeddingsForNote(noteId);
 		if (targetChunks.length === 0) {
@@ -108,8 +111,8 @@ export class VectorService {
 		// Get all chunk embeddings
 		const allChunks = this.vectorRepo.getAllChunkEmbeddingsWithChunks();
 
-		// Track best similarity per note
-		const noteSimilarities = new Map<string, { similarity: number; title: string; filePath: string }>();
+		// Track best similarity per chunk (use chunkId as key to avoid duplicates)
+		const chunkSimilarities = new Map<string, SimilarChunk>();
 
 		// For each target chunk, find similar chunks from other notes
 		for (const targetChunk of targetChunks) {
@@ -122,12 +125,16 @@ export class VectorService {
 				const similarity = cosineSimilarity(targetChunk.vector, chunk.vector);
 
 				if (similarity >= minSimilarity) {
-					const existing = noteSimilarities.get(chunk.noteId);
+					const existing = chunkSimilarities.get(chunk.chunkId);
 					if (!existing || similarity > existing.similarity) {
-						noteSimilarities.set(chunk.noteId, {
-							similarity,
-							title: chunk.noteTitle,
+						chunkSimilarities.set(chunk.chunkId, {
+							chunkId: chunk.chunkId,
+							noteId: chunk.noteId,
+							noteTitle: chunk.noteTitle,
+							heading: chunk.heading,
 							filePath: chunk.filePath,
+							startLine: chunk.startLine,
+							similarity,
 						});
 					}
 				}
@@ -135,16 +142,7 @@ export class VectorService {
 		}
 
 		// Convert to array and sort
-		const results: SimilarNote[] = [];
-		for (const [nId, data] of noteSimilarities) {
-			results.push({
-				noteId: nId,
-				title: data.title,
-				filePath: data.filePath,
-				similarity: data.similarity,
-			});
-		}
-
+		const results = Array.from(chunkSimilarities.values());
 		results.sort((a, b) => b.similarity - a.similarity);
 		return results.slice(0, limit);
 	}
