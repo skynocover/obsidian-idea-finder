@@ -249,25 +249,31 @@ export class SearchModal extends SuggestModal<ChunkSearchResult> {
 		// Increment query ID to track this specific search
 		const queryId = ++this.currentQueryId;
 
+		// Get threshold (as 0-1 value)
+		const threshold = this.config.searchThreshold / 100;
+
 		// Get keyword results first
 		const keywordResults = await this.textSearchService.search(query, 30);
 
 		// Normalize keyword scores
 		const kwMax = Math.max(...keywordResults.map((r) => r.score), 1);
 
-		// Return keyword results immediately as a baseline
-		const keywordOnlyResults: ChunkSearchResult[] = keywordResults.map((r) => ({
-			chunkId: r.chunkId,
-			noteId: r.noteId,
-			title: r.title,
-			heading: r.heading,
-			filePath: r.filePath,
-			score: r.score / kwMax,
-			snippet: r.snippet,
-			startLine: r.startLine,
-			keywordScore: r.score / kwMax,
-			semanticScore: null,
-		}));
+		// Build keyword-only results with threshold filter applied
+		const keywordOnlyResults: ChunkSearchResult[] = keywordResults
+			.map((r) => ({
+				chunkId: r.chunkId,
+				noteId: r.noteId,
+				title: r.title,
+				heading: r.heading,
+				filePath: r.filePath,
+				score: r.score / kwMax,
+				snippet: r.snippet,
+				startLine: r.startLine,
+				keywordScore: r.score / kwMax,
+				semanticScore: null,
+			}))
+			.filter((r) => r.score >= threshold)
+			.slice(0, 20);
 
 		// If another query started, return current results
 		if (queryId !== this.currentQueryId) {
@@ -303,7 +309,7 @@ export class SearchModal extends SuggestModal<ChunkSearchResult> {
 				return this.cachedResults;
 			}
 
-			// Merge results
+			// Merge results (mergeResults also applies threshold)
 			if (!semanticFailed && semanticResults.length > 0) {
 				this.cachedResults = this.mergeResults(keywordResults, semanticResults, query);
 			}
