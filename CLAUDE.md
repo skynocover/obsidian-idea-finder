@@ -8,11 +8,10 @@ An Obsidian plugin for semantic search and similar notes discovery powered by AI
 
 ## What This Plugin Does
 
-1. **Hybrid Search** - Combines keyword search (MiniSearch) with semantic search (vector embeddings) for smarter note discovery
-2. **Similar Notes** - Shows related notes in a sidebar panel based on vector similarity
+1. **Hybrid Search** - Combines keyword search (MiniSearch/TF-IDF) with semantic search (chunk embeddings) for smarter note discovery
+2. **Similar Notes** - Shows related notes in a sidebar panel based on chunk-level vector similarity
 3. **Content Chunking** - Splits notes by headings for more precise semantic matching
 4. **Auto-Indexing** - Watches vault for changes and keeps index up-to-date
-5. **Auto-Maintenance** - Automatically regenerates embeddings when notes change
 
 ## Tech Stack
 
@@ -20,7 +19,7 @@ An Obsidian plugin for semantic search and similar notes discovery powered by AI
 |-----------|------------|
 | Runtime | Obsidian Plugin API |
 | Database | sql.js (SQLite compiled to WebAssembly) |
-| Full-Text Search | MiniSearch (fuzzy matching, prefix search) |
+| Full-Text Search | MiniSearch (TF-IDF, fuzzy matching, prefix search) |
 | Embeddings | Jina AI API (`jina-embeddings-v3`, 1024 dimensions) |
 | Build | esbuild (CommonJS output, single `main.js`) |
 | Language | TypeScript 5.3+ |
@@ -43,7 +42,7 @@ idea-finder/
 │   │   ├── utils.ts                # Database utilities
 │   │   └── repositories/
 │   │       ├── NoteRepository.ts   # Note CRUD operations
-│   │       ├── VectorRepository.ts # Note-level embedding CRUD
+│   │       ├── VectorRepository.ts # Chunk embedding CRUD
 │   │       ├── ChunkRepository.ts  # Chunk CRUD operations
 │   │       └── MetadataRepository.ts # Tags & links CRUD
 │   │
@@ -55,7 +54,6 @@ idea-finder/
 │   │   ├── VectorService.ts        # Semantic search & similarity
 │   │   ├── SearchWeightService.ts  # Search ranking adjustments
 │   │   ├── SearchHistoryService.ts # Recent query tracking
-│   │   ├── EmbeddingMaintenanceService.ts # Auto-regenerate stale embeddings
 │   │   └── ErrorHandler.ts         # Centralized error handling
 │   │
 │   ├── ui/
@@ -124,14 +122,6 @@ CREATE TABLE links (
     FOREIGN KEY (from_note_id) REFERENCES notes(id) ON DELETE CASCADE
 );
 
--- Note-level embeddings (whole note vectors)
-CREATE TABLE embeddings (
-    note_id TEXT PRIMARY KEY,
-    vector BLOB NOT NULL,             -- Float32Array as binary
-    content_hash TEXT NOT NULL,       -- Must match notes.content_hash
-    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
-);
-
 -- Chunks table (note sections split by headings)
 CREATE TABLE note_chunks (
     id TEXT PRIMARY KEY,              -- SHA-256 of note_id + heading + startLine
@@ -144,13 +134,15 @@ CREATE TABLE note_chunks (
     FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
 );
 
--- Chunk-level embeddings (more precise semantic search)
+-- Chunk-level embeddings (primary embedding storage)
 CREATE TABLE chunk_embeddings (
     chunk_id TEXT PRIMARY KEY,
-    vector BLOB NOT NULL,
-    content_hash TEXT NOT NULL,
+    vector BLOB NOT NULL,             -- Float32Array as binary (1024 dimensions)
+    content_hash TEXT NOT NULL,       -- Must match note_chunks.content_hash
     FOREIGN KEY (chunk_id) REFERENCES note_chunks(id) ON DELETE CASCADE
 );
+
+-- Note: The `embeddings` table (note-level) is deprecated and no longer used.
 ```
 
 **Important**: Note content is NOT stored in the database. Services read content directly from the vault using `app.vault.cachedRead()` to avoid duplication.
@@ -174,6 +166,12 @@ interface Chunk {
     headingLevel: number | null;
     content: string;
     startLine: number;
+    contentHash: string;
+}
+
+interface ChunkEmbedding {
+    chunkId: string;
+    vector: number[];
     contentHash: string;
 }
 
@@ -201,9 +199,9 @@ NoteRepository + ChunkRepository (SQLite)
 TextSearchService (MiniSearch index)
 
 For semantic features:
-NoteRepository → EmbeddingService (Jina API) → VectorRepository
+ChunkRepository → EmbeddingService (Jina API) → VectorRepository
         ↓
-VectorService (cosine similarity)
+VectorService (cosine similarity on chunks)
         ↓
 SearchModal / SimilarNotesView
 ```
@@ -215,11 +213,10 @@ SearchModal / SimilarNotesView
 | `DatabaseManager` | sql.js WASM lifecycle, backup/restore, migrations |
 | `IndexerService` | Full vault scan, progressive indexing, title extraction |
 | `FileWatcherService` | Real-time file change detection, debounced batching |
-| `TextSearchService` | MiniSearch wrapper, fuzzy search, snippet generation |
-| `EmbeddingService` | Jina API calls, batch processing, retry with backoff |
-| `VectorService` | Cosine similarity, semantic search, similar notes |
+| `TextSearchService` | MiniSearch wrapper (TF-IDF), fuzzy search, snippet generation |
+| `EmbeddingService` | Jina API calls for chunk embeddings, batch processing, retry with backoff |
+| `VectorService` | Cosine similarity on chunk embeddings, semantic search, similar notes |
 | `SearchWeightService` | Ranking adjustments (title, backlinks, tags) |
-| `EmbeddingMaintenanceService` | Auto-regenerate embeddings on content changes |
 
 ## Plugin Settings
 
@@ -229,10 +226,8 @@ interface IdeaFinderSettings {
     keywordWeight: number;           // 0-1, default 0.3
     semanticWeight: number;          // 0-1, default 0.7
     similarityThreshold: number;     // 0-100%, default 30
-    autoMaintainEmbeddings: boolean; // Auto-regenerate, default true
     folderFilter: {
-        mode: "exclude" | "include";
-        folders: string[];           // Relative paths
+        folders: string[];           // Relative paths to exclude
     };
     searchWeights: {
         title: number;               // 1.0-5.0, default 2.0
@@ -241,10 +236,45 @@ interface IdeaFinderSettings {
     };
     chunkingOptions: {
         maxHeadingLevel: number;     // 1-6, default 2
-        minChunkLength: number;      // 10-500, default 50
     };
 }
 ```
+
+## Search Algorithm
+
+### Hybrid Search Flow
+
+```
+User Query
+    ↓
+Parse advanced syntax (tag:, folder:, -exclude)
+    ↓
+┌─────────────────────────────────────┐
+│  Parallel Execution                  │
+│  ┌─────────────┐  ┌───────────────┐ │
+│  │ Keyword     │  │ Semantic      │ │
+│  │ (TF-IDF)    │  │ (Embeddings)  │ │
+│  └─────────────┘  └───────────────┘ │
+└─────────────────────────────────────┘
+    ↓
+Merge: score = kw × 0.3 + sem × 0.7
+    ↓
+Apply filters → Return sorted results
+```
+
+### Semantic Search
+
+1. Query string is sent to Jina API → generates 1024-dim embedding
+2. Compare with all chunk embeddings using cosine similarity
+3. Aggregate by note: each note gets its best chunk's similarity score
+4. Return top N notes
+
+### Similar Notes
+
+1. Get all chunk embeddings for the current note
+2. For each chunk, find similar chunks from other notes
+3. Aggregate: each other note gets its best matching chunk's similarity
+4. Filter by threshold, return sorted results
 
 ## API Integration
 
@@ -274,7 +304,7 @@ Content-Type: application/json
 ```
 
 **Configuration** (from `src/config/constants.ts`):
-- Batch size: 10 notes/chunks per request
+- Batch size: 10 chunks per request
 - Max text length: 8000 characters (truncated)
 - Retry: exponential backoff (1s → 60s, max 5 retries)
 - Jitter: 0-1000ms random delay between retries
@@ -386,10 +416,10 @@ Output requirements (Obsidian plugin standard):
 - SearchModal uses `currentQueryId` to discard stale results
 - Keyword results return immediately, semantic merged async
 
-### Embedding Stale After Edit
+### Embeddings Not Updating
 - `content_hash` tracks content changes
-- EmbeddingMaintenanceService auto-regenerates if enabled
-- Manual: Settings → Generate Embeddings
+- Manual: Settings → Generate Embeddings button
+- Or use command palette: "Generate embeddings"
 
 ### WASM Loading Issues
 - sql.js WASM loaded from CDN: `https://sql.js.org/dist/sql-wasm.wasm`
@@ -411,7 +441,7 @@ Output requirements (Obsidian plugin standard):
 | `open-search` | Search notes | Open hybrid search modal |
 | `rebuild-index` | Rebuild index | Re-scan entire vault |
 | `open-similar-notes` | Show similar notes | Open sidebar panel |
-| `generate-embeddings` | Generate embeddings | Process all notes |
+| `generate-embeddings` | Generate embeddings | Process all chunks |
 
 ## UI Components
 
@@ -422,7 +452,7 @@ Output requirements (Obsidian plugin standard):
 - Real-time results with race condition protection
 
 ### SimilarNotesView (`ItemView`)
-- Sidebar panel showing similar notes
+- Sidebar panel showing similar notes based on chunk similarity
 - Updates on active file change
 - Requires embeddings to be generated
-- Click to open in new tab
+- Click to open in vertical split
