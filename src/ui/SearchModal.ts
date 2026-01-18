@@ -7,38 +7,42 @@ import type { MetadataRepository } from "../database/repositories/MetadataReposi
 import { advancedQueryParser, type ParsedQuery } from "../utils/AdvancedQueryParser";
 import { showInfo } from "../utils/notice";
 import type { Logger } from "../utils/Logger";
-import { RECENT_QUERIES_LIMIT, ALL_NOTES_LIMIT } from "../config/constants";
+import { RECENT_QUERIES_LIMIT } from "../config/constants";
 
-export interface HybridSearchResult {
+export interface ChunkSearchResult {
+	chunkId: string;
 	noteId: string;
 	title: string;
+	heading: string;
 	filePath: string;
 	score: number;
 	snippet: string;
+	startLine: number;
 	keywordScore: number | null;
 	semanticScore: number | null;
 	backlinkCount?: number;
 	tagMatchCount?: number;
-	isHistoryItem?: boolean; // Flag for history suggestions
+	isHistoryItem?: boolean;
 }
 
 interface SearchConfig {
 	keywordWeight: number;
 	semanticWeight: number;
+	searchThreshold: number;
 }
 
-export class SearchModal extends SuggestModal<HybridSearchResult> {
+export class SearchModal extends SuggestModal<ChunkSearchResult> {
 	private textSearchService: TextSearchService;
 	private vectorService: VectorService | null;
 	private searchWeightService: SearchWeightService | null;
 	private searchHistoryService: SearchHistoryService | null;
 	private metadataRepo: MetadataRepository | null;
-	private onChoose: (result: HybridSearchResult) => void;
+	private onChoose: (result: ChunkSearchResult) => void;
 	private config: SearchConfig;
 	private lastQuery = "";
-	private cachedResults: HybridSearchResult[] = [];
+	private cachedResults: ChunkSearchResult[] = [];
 	private isSearching = false;
-	private currentQueryId = 0; // Track query to prevent race conditions
+	private currentQueryId = 0;
 	private showingHistory = false;
 	private logger: Logger | null;
 
@@ -47,7 +51,7 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 		textSearchService: TextSearchService,
 		vectorService: VectorService | null,
 		config: SearchConfig,
-		onChoose: (result: HybridSearchResult) => void,
+		onChoose: (result: ChunkSearchResult) => void,
 		searchWeightService: SearchWeightService | null = null,
 		searchHistoryService: SearchHistoryService | null = null,
 		metadataRepo: MetadataRepository | null = null,
@@ -56,10 +60,10 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 		super(app);
 		this.textSearchService = textSearchService;
 		this.vectorService = vectorService;
+		this.config = config;
 		this.searchWeightService = searchWeightService;
 		this.searchHistoryService = searchHistoryService;
 		this.metadataRepo = metadataRepo;
-		this.config = config;
 		this.onChoose = onChoose;
 		this.logger = logger;
 
@@ -70,7 +74,7 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 		this.modalEl.addClass("idea-finder-search-modal");
 	}
 
-	async getSuggestions(query: string): Promise<HybridSearchResult[]> {
+	async getSuggestions(query: string): Promise<ChunkSearchResult[]> {
 		// Show search history when input is empty
 		if (!query.trim()) {
 			this.showingHistory = true;
@@ -89,18 +93,18 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 		// Parse advanced query syntax
 		const parsedQuery = advancedQueryParser.parse(query);
 
-		// If only filters with no text query, show filtered results or history
-		if (!parsedQuery.textQuery && (parsedQuery.tags.length > 0 || parsedQuery.folder)) {
-			this.cachedResults = await this.filterOnlySearch(parsedQuery);
-			return this.cachedResults;
+		// If only filters with no text query, return empty
+		if (!parsedQuery.textQuery) {
+			return [];
 		}
 
-		// If no embeddings, use keyword search only
+		// Check if we have embeddings for hybrid search
 		const hasEmbeddings = this.vectorService?.hasAnyEmbeddings() ?? false;
 
-		if (!hasEmbeddings) {
-			this.cachedResults = await this.keywordSearch(parsedQuery.textQuery);
-			this.cachedResults = this.applyFilters(this.cachedResults, parsedQuery);
+		if (!hasEmbeddings || this.config.semanticWeight === 0) {
+			// Use keyword search only
+			const results = await this.keywordSearch(parsedQuery.textQuery);
+			this.cachedResults = this.applyFilters(results, parsedQuery);
 			return this.cachedResults;
 		}
 
@@ -113,18 +117,21 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 	/**
 	 * Get search history suggestions.
 	 */
-	private getHistorySuggestions(): HybridSearchResult[] {
+	private getHistorySuggestions(): ChunkSearchResult[] {
 		if (!this.searchHistoryService) {
 			return [];
 		}
 
 		const recentQueries = this.searchHistoryService.getRecentQueries(RECENT_QUERIES_LIMIT);
 		return recentQueries.map((entry) => ({
+			chunkId: `history_${entry.timestamp}`,
 			noteId: `history_${entry.timestamp}`,
 			title: entry.query,
+			heading: "",
 			filePath: `${entry.resultCount} results`,
 			score: 1,
 			snippet: "",
+			startLine: 0,
 			keywordScore: null,
 			semanticScore: null,
 			isHistoryItem: true,
@@ -132,32 +139,12 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 	}
 
 	/**
-	 * Search with only filters (no text query).
-	 */
-	private async filterOnlySearch(parsedQuery: ParsedQuery): Promise<HybridSearchResult[]> {
-		// Get all notes and filter by criteria
-		const allNotes = await this.textSearchService.search("", ALL_NOTES_LIMIT);
-		return this.applyFilters(
-			allNotes.map((r) => ({
-				noteId: r.noteId,
-				title: r.title,
-				filePath: r.filePath,
-				score: 1,
-				snippet: "",
-				keywordScore: null,
-				semanticScore: null,
-			})),
-			parsedQuery
-		);
-	}
-
-	/**
 	 * Apply advanced query filters to results.
 	 */
 	private applyFilters(
-		results: HybridSearchResult[],
+		results: ChunkSearchResult[],
 		parsedQuery: ParsedQuery
-	): HybridSearchResult[] {
+	): ChunkSearchResult[] {
 		let filtered = results;
 
 		// Filter by folder
@@ -186,11 +173,13 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 			filtered = filtered.filter((r) => {
 				const titleLower = r.title.toLowerCase();
 				const snippetLower = r.snippet.toLowerCase();
+				const headingLower = r.heading.toLowerCase();
 				// Must NOT contain any excluded terms
 				return !parsedQuery.excludeTerms.some(
 					(term) =>
 						titleLower.includes(term.toLowerCase()) ||
-						snippetLower.includes(term.toLowerCase())
+						snippetLower.includes(term.toLowerCase()) ||
+						headingLower.includes(term.toLowerCase())
 				);
 			});
 		}
@@ -198,15 +187,25 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 		return filtered;
 	}
 
-	private async keywordSearch(query: string): Promise<HybridSearchResult[]> {
-		const results = await this.textSearchService.search(query, 20);
-		const baseResults = results.map((r) => ({
+	private async keywordSearch(query: string): Promise<ChunkSearchResult[]> {
+		const results = await this.textSearchService.search(query, 30);
+
+		// Get threshold (as 0-1 value)
+		const threshold = this.config.searchThreshold / 100;
+
+		// Normalize scores (max score = 1)
+		const maxScore = Math.max(...results.map((r) => r.score), 1);
+
+		const baseResults: ChunkSearchResult[] = results.map((r) => ({
+			chunkId: r.chunkId,
 			noteId: r.noteId,
 			title: r.title,
+			heading: r.heading,
 			filePath: r.filePath,
-			score: r.score,
+			score: r.score / maxScore,
 			snippet: r.snippet,
-			keywordScore: r.score,
+			startLine: r.startLine,
+			keywordScore: r.score / maxScore,
 			semanticScore: null,
 		}));
 
@@ -223,43 +222,54 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 				query
 			);
 
-			// Normalize and return
 			const normalizedResults = this.searchWeightService.normalizeScores(weightedResults);
-			return normalizedResults.map((r) => ({
-				noteId: r.noteId,
-				title: r.title,
-				filePath: r.filePath,
-				score: r.weightedScore,
-				snippet: r.snippet,
-				keywordScore: baseResults.find((or) => or.noteId === r.noteId)?.keywordScore ?? null,
-				semanticScore: null,
-				backlinkCount: r.backlinkCount,
-				tagMatchCount: r.tagMatchCount,
-			}));
+			const normalizedMap = new Map(normalizedResults.map((r) => [r.noteId, r]));
+
+			return baseResults.map((r) => {
+				const normalized = normalizedMap.get(r.noteId);
+				return {
+					...r,
+					score: normalized?.weightedScore ?? r.score,
+					backlinkCount: normalized?.backlinkCount,
+					tagMatchCount: normalized?.tagMatchCount,
+				};
+			})
+				.filter((r) => r.score >= threshold)
+				.sort((a, b) => b.score - a.score)
+				.slice(0, 20);
 		}
 
-		return baseResults;
+		return baseResults
+			.filter((r) => r.score >= threshold)
+			.sort((a, b) => b.score - a.score)
+			.slice(0, 20);
 	}
 
-	private async hybridSearch(query: string): Promise<HybridSearchResult[]> {
+	private async hybridSearch(query: string): Promise<ChunkSearchResult[]> {
 		// Increment query ID to track this specific search
 		const queryId = ++this.currentQueryId;
 
 		// Get keyword results first
 		const keywordResults = await this.textSearchService.search(query, 30);
 
+		// Normalize keyword scores
+		const kwMax = Math.max(...keywordResults.map((r) => r.score), 1);
+
 		// Return keyword results immediately as a baseline
-		const keywordOnlyResults = keywordResults.map((r) => ({
+		const keywordOnlyResults: ChunkSearchResult[] = keywordResults.map((r) => ({
+			chunkId: r.chunkId,
 			noteId: r.noteId,
 			title: r.title,
+			heading: r.heading,
 			filePath: r.filePath,
-			score: r.score,
+			score: r.score / kwMax,
 			snippet: r.snippet,
-			keywordScore: r.score,
+			startLine: r.startLine,
+			keywordScore: r.score / kwMax,
 			semanticScore: null,
 		}));
 
-		// If another query started, return current results without updating cache
+		// If another query started, return current results
 		if (queryId !== this.currentQueryId) {
 			return keywordOnlyResults;
 		}
@@ -275,30 +285,25 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 		this.isSearching = true;
 
 		try {
-			// Get semantic results asynchronously using smart search
-			// (automatically uses chunk embeddings if available)
 			let semanticResults: SemanticSearchResult[] = [];
 			let semanticFailed = false;
 
 			if (this.vectorService) {
 				try {
-					// Search using chunk embeddings
 					semanticResults = await this.vectorService.search(query, 30);
 				} catch (error) {
 					this.logger?.error("SearchModal: Semantic search failed:", error);
 					semanticFailed = true;
-					// Silently fall back to keyword-only
 					showInfo("Using keyword search only (semantic unavailable)");
 				}
 			}
 
-			// Check if query changed while we were waiting for semantic results
+			// Check if query changed while waiting
 			if (queryId !== this.currentQueryId) {
-				// Query has changed, discard these results
 				return this.cachedResults;
 			}
 
-			// Merge results (or just keyword if semantic failed)
+			// Merge results
 			if (!semanticFailed && semanticResults.length > 0) {
 				this.cachedResults = this.mergeResults(keywordResults, semanticResults, query);
 			}
@@ -313,40 +318,39 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 		keywordResults: SearchResult[],
 		semanticResults: SemanticSearchResult[],
 		query: string
-	): HybridSearchResult[] {
-		// Create maps for quick lookup
+	): ChunkSearchResult[] {
+		// Get threshold (as 0-1 value)
+		const threshold = this.config.searchThreshold / 100;
+
+		// Create maps for quick lookup (by chunkId)
 		const keywordMap = new Map<string, SearchResult>();
 		const semanticMap = new Map<string, SemanticSearchResult>();
 
 		for (const r of keywordResults) {
-			keywordMap.set(r.noteId, r);
+			keywordMap.set(r.chunkId, r);
 		}
 		for (const r of semanticResults) {
-			semanticMap.set(r.noteId, r);
+			semanticMap.set(r.chunkId, r);
 		}
 
-		// Get all unique note IDs
-		const allNoteIds = new Set([
-			...keywordResults.map((r) => r.noteId),
-			...semanticResults.map((r) => r.noteId),
+		// Get all unique chunk IDs
+		const allChunkIds = new Set([
+			...keywordResults.map((r) => r.chunkId),
+			...semanticResults.map((r) => r.chunkId),
 		]);
 
 		// Normalize keyword scores (0-1)
 		const kwScores = keywordResults.map((r) => r.score);
 		const kwMax = Math.max(...kwScores, 1);
-		const kwMin = Math.min(...kwScores, 0);
-		const kwRange = kwMax - kwMin || 1;
 
-		const normalizeKeyword = (score: number): number => {
-			return (score - kwMin) / kwRange;
-		};
+		const normalizeKeyword = (score: number): number => score / kwMax;
 
 		// Calculate hybrid scores
-		const results: HybridSearchResult[] = [];
+		const results: ChunkSearchResult[] = [];
 
-		for (const noteId of allNoteIds) {
-			const kwResult = keywordMap.get(noteId);
-			const semResult = semanticMap.get(noteId);
+		for (const chunkId of allChunkIds) {
+			const kwResult = keywordMap.get(chunkId);
+			const semResult = semanticMap.get(chunkId);
 
 			const kwScore = kwResult ? normalizeKeyword(kwResult.score) : null;
 			const semScore = semResult ? semResult.similarity : null;
@@ -358,19 +362,22 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 					kwScore * this.config.keywordWeight +
 					semScore * this.config.semanticWeight;
 			} else if (kwScore !== null) {
-				finalScore = kwScore;
+				finalScore = kwScore * this.config.keywordWeight;
 			} else if (semScore !== null) {
-				finalScore = semScore;
+				finalScore = semScore * this.config.semanticWeight;
 			} else {
 				continue;
 			}
 
 			results.push({
-				noteId,
+				chunkId,
+				noteId: kwResult?.noteId || semResult?.noteId || "",
 				title: kwResult?.title || semResult?.title || "",
+				heading: kwResult?.heading || semResult?.heading || "",
 				filePath: kwResult?.filePath || semResult?.filePath || "",
 				score: finalScore,
 				snippet: kwResult?.snippet || "",
+				startLine: kwResult?.startLine || semResult?.startLine || 0,
 				keywordScore: kwScore,
 				semanticScore: semScore,
 			});
@@ -389,27 +396,31 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 				query
 			);
 
-			// Normalize weighted scores and convert back to HybridSearchResult
 			const normalizedResults = this.searchWeightService.normalizeScores(weightedResults);
-			return normalizedResults.slice(0, 20).map((r) => ({
-				noteId: r.noteId,
-				title: r.title,
-				filePath: r.filePath,
-				score: r.weightedScore,
-				snippet: r.snippet,
-				keywordScore: results.find((or) => or.noteId === r.noteId)?.keywordScore ?? null,
-				semanticScore: results.find((or) => or.noteId === r.noteId)?.semanticScore ?? null,
-				backlinkCount: r.backlinkCount,
-				tagMatchCount: r.tagMatchCount,
-			}));
+			const normalizedMap = new Map(normalizedResults.map((r) => [r.noteId, r]));
+
+			return results.map((r) => {
+				const normalized = normalizedMap.get(r.noteId);
+				return {
+					...r,
+					score: normalized?.weightedScore ?? r.score,
+					backlinkCount: normalized?.backlinkCount,
+					tagMatchCount: normalized?.tagMatchCount,
+				};
+			})
+				.filter((r) => r.score >= threshold)
+				.sort((a, b) => b.score - a.score)
+				.slice(0, 20);
 		}
 
-		// Sort by score descending
-		results.sort((a, b) => b.score - a.score);
-		return results.slice(0, 20);
+		// Sort by score and filter by threshold
+		return results
+			.filter((r) => r.score >= threshold)
+			.sort((a, b) => b.score - a.score)
+			.slice(0, 20);
 	}
 
-	renderSuggestion(result: HybridSearchResult, el: HTMLElement): void {
+	renderSuggestion(result: ChunkSearchResult, el: HTMLElement): void {
 		// Special rendering for history items
 		if (result.isHistoryItem) {
 			const container = el.createDiv({ cls: "vibe-search-result vibe-history-item" });
@@ -431,9 +442,13 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 
 		const container = el.createDiv({ cls: "vibe-search-result" });
 
-		// Title
+		// Title with optional heading
 		const titleEl = container.createDiv({ cls: "vibe-search-result-title" });
-		titleEl.setText(result.title || "Untitled");
+		if (result.heading) {
+			titleEl.setText(`${result.title || "Untitled"} > ${result.heading}`);
+		} else {
+			titleEl.setText(result.title || "Untitled");
+		}
 
 		// File path
 		const pathEl = container.createDiv({ cls: "vibe-search-result-path" });
@@ -445,7 +460,7 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 			snippetEl.innerHTML = result.snippet;
 		}
 
-		// Score indicator - show weighted score as percentage
+		// Score indicator - show as percentage
 		const scoreEl = container.createDiv({ cls: "vibe-search-result-score" });
 		const scorePercent = Math.round(Math.min(result.score, 1) * 100);
 		scoreEl.setText(`${scorePercent}% match`);
@@ -465,7 +480,7 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 		return `No results found for "${this.lastQuery}"`;
 	}
 
-	onChooseSuggestion(result: HybridSearchResult, evt: MouseEvent | KeyboardEvent): void {
+	onChooseSuggestion(result: ChunkSearchResult, evt: MouseEvent | KeyboardEvent): void {
 		// If it's a history item, fill the search input with the query
 		if (result.isHistoryItem) {
 			this.inputEl.value = result.title;
@@ -480,12 +495,26 @@ export class SearchModal extends SuggestModal<HybridSearchResult> {
 	}
 
 	/**
-	 * Open a file by path.
+	 * Open a file by path, optionally jumping to a specific line.
 	 */
-	static async openFile(app: App, filePath: string): Promise<void> {
+	static async openFile(app: App, filePath: string, line?: number): Promise<void> {
 		const file = app.vault.getAbstractFileByPath(filePath);
 		if (file instanceof TFile) {
-			await app.workspace.getLeaf(false).openFile(file);
+			const leaf = app.workspace.getLeaf(false);
+			await leaf.openFile(file);
+
+			// Jump to specific line if provided
+			if (line !== undefined && line > 0) {
+				const view = leaf.view;
+				if (view.getViewType() === "markdown") {
+					// Use Obsidian's editor to scroll to line
+					const editor = (view as any).editor;
+					if (editor) {
+						editor.setCursor({ line: line - 1, ch: 0 });
+						editor.scrollIntoView({ from: { line: line - 1, ch: 0 }, to: { line: line - 1, ch: 0 } }, true);
+					}
+				}
+			}
 		}
 	}
 }

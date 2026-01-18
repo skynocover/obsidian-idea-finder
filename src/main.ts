@@ -60,7 +60,12 @@ export default class IdeaFinderPlugin extends Plugin {
 			this.chunkRepo = new ChunkRepository(() => this.dbManager.getDb());
 
 			// Initialize services
-			this.textSearchService = new TextSearchService(this.noteRepo, this.app, this.logger);
+			this.textSearchService = new TextSearchService(
+				this.noteRepo,
+				this.chunkRepo,
+				this.app,
+				this.logger
+			);
 			await this.textSearchService.initialize();
 
 			this.embeddingService = new EmbeddingService(
@@ -115,22 +120,18 @@ export default class IdeaFinderPlugin extends Plugin {
 						this.hideIndexingProgress();
 						showSuccess(`Idea Finder: Indexed ${total} notes`);
 						await this.textSearchService.rebuild();
-											},
+					},
 					onFileIndexed: async (path) => {
 						const note = this.noteRepo.getNoteByPath(path);
 						if (note) {
-							const file = this.app.vault.getAbstractFileByPath(path);
-							if (file instanceof TFile) {
-								const content = await this.app.vault.cachedRead(file);
-								this.textSearchService.addOrUpdate(
-									note.id,
-									note.title,
-									content,
-									note.filePath
-								);
-							}
+							// Update text search index with new chunks
+							this.textSearchService.addOrUpdateNote(
+								note.id,
+								note.title,
+								note.filePath
+							);
 						}
-											},
+					},
 				},
 				{
 					getFolderFilter: () => this.settings.folderFilter,
@@ -157,7 +158,7 @@ export default class IdeaFinderPlugin extends Plugin {
 							if (event.type === "delete") {
 								const note = this.noteRepo.getNoteByPath(event.path);
 								if (note) {
-									this.textSearchService.remove(note.id);
+									this.textSearchService.removeAllForNote(note.id);
 								}
 							}
 						}
@@ -334,9 +335,11 @@ export default class IdeaFinderPlugin extends Plugin {
 			{
 				keywordWeight: this.settings.keywordWeight,
 				semanticWeight: this.settings.semanticWeight,
+				searchThreshold: this.settings.searchThreshold,
 			},
 			async (result) => {
-				await SearchModal.openFile(this.app, result.filePath);
+				// Open file and jump to the chunk's start line
+				await SearchModal.openFile(this.app, result.filePath, result.startLine);
 			},
 			this.searchWeightService || null,
 			this.searchHistoryService || null,

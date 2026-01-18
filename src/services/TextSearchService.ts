@@ -1,44 +1,57 @@
 import MiniSearch from "minisearch";
 import { type App } from "obsidian";
 import type { NoteRepository } from "../database/repositories/NoteRepository";
+import type { ChunkRepository } from "../database/repositories/ChunkRepository";
 import { LRUCache } from "../utils/lru-cache";
-import { readFileContent } from "../utils/file";
 import type { Logger } from "../utils/Logger";
 import { SEARCH_CACHE_SIZE, SNIPPET_CONTEXT_LENGTH } from "../config/constants";
 
 export interface SearchResult {
+	chunkId: string;
 	noteId: string;
 	title: string;
+	heading: string;
 	filePath: string;
 	score: number;
 	snippet: string;
+	startLine: number;
 }
 
 interface IndexedDocument {
-	id: string;
-	title: string;
-	content: string;
+	id: string;           // chunk ID
+	noteId: string;       // note ID
+	title: string;        // note title
+	heading: string;      // chunk heading (empty string for no heading)
+	content: string;      // chunk content
 	filePath: string;
+	startLine: number;
 }
 
 export class TextSearchService {
 	private miniSearch: MiniSearch<IndexedDocument>;
 	private noteRepo: NoteRepository;
+	private chunkRepo: ChunkRepository;
 	private app: App;
 	private isInitialized = false;
 	private searchCache: LRUCache<string, SearchResult[]>;
 	private logger: Logger | null;
 
-	constructor(noteRepo: NoteRepository, app: App, logger: Logger | null = null) {
+	constructor(
+		noteRepo: NoteRepository,
+		chunkRepo: ChunkRepository,
+		app: App,
+		logger: Logger | null = null
+	) {
 		this.noteRepo = noteRepo;
+		this.chunkRepo = chunkRepo;
 		this.app = app;
 		this.logger = logger;
 		this.searchCache = new LRUCache<string, SearchResult[]>(SEARCH_CACHE_SIZE);
 		this.miniSearch = new MiniSearch<IndexedDocument>({
-			fields: ["title", "content"],
-			storeFields: ["title", "filePath"],
+			fields: ["title", "heading", "content"],
+			storeFields: ["noteId", "title", "heading", "filePath", "startLine"],
 			searchOptions: {
-				boost: { title: 2 },
+				boost: { title: 2, heading: 1.5 },
 				fuzzy: 0.2,
 				prefix: true,
 			},
@@ -54,34 +67,36 @@ export class TextSearchService {
 	}
 
 	/**
-	 * Initialize the search index from database.
+	 * Initialize the search index from database (chunk-level).
 	 */
 	async initialize(): Promise<void> {
 		if (this.isInitialized) return;
 
-		this.logger?.info("TextSearch: Initializing search index...");
+		this.logger?.info("TextSearch: Initializing chunk-level search index...");
 
+		const chunks = this.chunkRepo.getAllChunks();
 		const notes = this.noteRepo.getAllNotes();
-		const documents: IndexedDocument[] = [];
+		const noteMap = new Map(notes.map((n) => [n.id, n]));
 
-		for (const note of notes) {
-			const content = await readFileContent(this.app, note.filePath);
-			if (content !== null) {
-				documents.push({
-					id: note.id,
-					title: note.title,
-					content,
-					filePath: note.filePath,
-				});
-			}
-		}
+		const documents: IndexedDocument[] = chunks.map((chunk) => {
+			const note = noteMap.get(chunk.noteId);
+			return {
+				id: chunk.id,
+				noteId: chunk.noteId,
+				title: note?.title || "Untitled",
+				heading: chunk.heading || "",
+				content: chunk.content,
+				filePath: note?.filePath || "",
+				startLine: chunk.startLine,
+			};
+		});
 
 		if (documents.length > 0) {
 			this.miniSearch.addAll(documents);
 		}
 
 		this.isInitialized = true;
-		this.logger?.info(`TextSearch: Indexed ${documents.length} documents`);
+		this.logger?.info(`TextSearch: Indexed ${documents.length} chunks`);
 	}
 
 	/**
@@ -95,9 +110,8 @@ export class TextSearchService {
 	}
 
 	/**
-	 * Search for notes matching the query.
-	 * Applies enhanced fuzzy matching for English queries.
-	 * Uses LRU cache to avoid redundant searches.
+	 * Search for chunks matching the query.
+	 * Returns individual chunk results.
 	 */
 	async search(query: string, limit: number = 20): Promise<SearchResult[]> {
 		if (!query.trim()) return [];
@@ -113,15 +127,13 @@ export class TextSearchService {
 		const isEnglish = this.isEnglishQuery(query);
 		const searchOptions: Record<string, unknown> = {
 			limit,
-			boost: { title: 2 },
+			boost: { title: 2, heading: 1.5 },
 			prefix: true,
 		};
 
 		if (isEnglish) {
 			// For English queries, increase fuzzy tolerance for better typo handling
 			searchOptions.fuzzy = 0.25;
-			// For short English words (< 4 chars), use exact prefix matching
-			// For longer words, allow more fuzzy variations
 			searchOptions.combineWith = "OR";
 		} else {
 			// For CJK/mixed queries, use tighter fuzzy matching
@@ -132,13 +144,19 @@ export class TextSearchService {
 
 		const searchResults: SearchResult[] = [];
 		for (const result of results) {
-			const snippet = await this.generateSnippet(result.filePath as string, query);
+			const snippet = this.generateSnippetFromContent(
+				result.content as string || "",
+				query
+			);
 			searchResults.push({
-				noteId: result.id,
+				chunkId: result.id,
+				noteId: result.noteId as string,
 				title: result.title as string,
+				heading: result.heading as string,
 				filePath: result.filePath as string,
 				score: result.score,
 				snippet,
+				startLine: result.startLine as number,
 			});
 		}
 
@@ -149,80 +167,102 @@ export class TextSearchService {
 	}
 
 	/**
-	 * Add or update a document in the index.
-	 * Clears the search cache since results may have changed.
+	 * Add or update chunks for a note in the index.
+	 * Call this when a note is indexed/updated.
 	 */
-	addOrUpdate(noteId: string, title: string, content: string, filePath: string): void {
-		// Remove existing document if present
-		if (this.miniSearch.has(noteId)) {
-			this.miniSearch.discard(noteId);
-		}
+	addOrUpdateNote(noteId: string, title: string, filePath: string): void {
+		// First remove all existing chunks for this note
+		this.removeAllForNote(noteId);
 
-		// Add the document
-		this.miniSearch.add({
-			id: noteId,
-			title,
-			content,
-			filePath,
-		});
+		// Get all chunks for the note from the database
+		const chunks = this.chunkRepo.getChunksByNoteId(noteId);
+
+		// Add each chunk to the index
+		for (const chunk of chunks) {
+			this.miniSearch.add({
+				id: chunk.id,
+				noteId: chunk.noteId,
+				title,
+				heading: chunk.heading || "",
+				content: chunk.content,
+				filePath,
+				startLine: chunk.startLine,
+			});
+		}
 
 		// Clear cache since index has changed
 		this.searchCache.clear();
 	}
 
 	/**
-	 * Remove a document from the index.
-	 * Clears the search cache since results may have changed.
+	 * Remove all chunks for a note from the index.
 	 */
-	remove(noteId: string): void {
-		if (this.miniSearch.has(noteId)) {
-			this.miniSearch.discard(noteId);
+	removeAllForNote(noteId: string): void {
+		// Get all document IDs in the index that belong to this note
+		const allDocs = this.miniSearch.search("", { prefix: false, fuzzy: false });
+
+		// MiniSearch doesn't have a direct way to query by field,
+		// so we need to iterate through all indexed chunks
+		const chunks = this.chunkRepo.getChunksByNoteId(noteId);
+		for (const chunk of chunks) {
+			if (this.miniSearch.has(chunk.id)) {
+				this.miniSearch.discard(chunk.id);
+			}
 		}
 
 		// Clear cache since index has changed
+		this.searchCache.clear();
+	}
+
+	/**
+	 * Remove a specific chunk from the index.
+	 */
+	removeChunk(chunkId: string): void {
+		if (this.miniSearch.has(chunkId)) {
+			this.miniSearch.discard(chunkId);
+		}
 		this.searchCache.clear();
 	}
 
 	/**
 	 * Rebuild the entire index from database.
-	 * Clears the search cache.
 	 */
 	async rebuild(): Promise<void> {
-		this.logger?.info("TextSearch: Rebuilding index...");
+		this.logger?.info("TextSearch: Rebuilding chunk-level index...");
 
 		// Clear existing index and cache
 		this.miniSearch.removeAll();
 		this.searchCache.clear();
 
-		// Re-add all documents
+		// Re-add all chunks
+		const chunks = this.chunkRepo.getAllChunks();
 		const notes = this.noteRepo.getAllNotes();
-		const documents: IndexedDocument[] = [];
+		const noteMap = new Map(notes.map((n) => [n.id, n]));
 
-		for (const note of notes) {
-			const content = await readFileContent(this.app, note.filePath);
-			if (content !== null) {
-				documents.push({
-					id: note.id,
-					title: note.title,
-					content,
-					filePath: note.filePath,
-				});
-			}
-		}
+		const documents: IndexedDocument[] = chunks.map((chunk) => {
+			const note = noteMap.get(chunk.noteId);
+			return {
+				id: chunk.id,
+				noteId: chunk.noteId,
+				title: note?.title || "Untitled",
+				heading: chunk.heading || "",
+				content: chunk.content,
+				filePath: note?.filePath || "",
+				startLine: chunk.startLine,
+			};
+		});
 
 		if (documents.length > 0) {
 			this.miniSearch.addAll(documents);
 		}
 
-		this.logger?.info(`TextSearch: Rebuilt index with ${documents.length} documents`);
+		this.logger?.info(`TextSearch: Rebuilt index with ${documents.length} chunks`);
 	}
 
 	/**
-	 * Generate a snippet with highlighted matches.
-	 * Optimized to use a single pre-compiled regex for all terms.
+	 * Generate a snippet with highlighted matches from chunk content.
 	 */
-	private async generateSnippet(filePath: string, query: string): Promise<string> {
-		const content = await readFileContent(this.app, filePath);
+	private generateSnippetFromContent(content: string, query: string): string {
 		if (!content) return "";
 
 		const contentLower = content.toLowerCase();

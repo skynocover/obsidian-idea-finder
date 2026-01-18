@@ -5,20 +5,11 @@ import type { Logger } from "../utils/Logger";
 import { DEFAULT_SEARCH_LIMIT, DEFAULT_MIN_SIMILARITY } from "../config/constants";
 
 export interface SemanticSearchResult {
+	chunkId: string;
 	noteId: string;
 	title: string;
 	filePath: string;
-	similarity: number;
-}
-
-export interface ChunkSearchResult {
-	chunkId: string;
-	noteId: string;
-	noteTitle: string;
-	filePath: string;
 	heading: string | null;
-	headingLevel: number | null;
-	content: string;
 	startLine: number;
 	similarity: number;
 }
@@ -46,8 +37,8 @@ export class VectorService {
 	}
 
 	/**
-	 * Search notes by semantic similarity to a query string.
-	 * Uses chunk embeddings and aggregates results by note.
+	 * Search chunks by semantic similarity to a query string.
+	 * Returns individual chunk results (not aggregated by note).
 	 */
 	async search(
 		query: string,
@@ -73,42 +64,25 @@ export class VectorService {
 		}
 
 		// Calculate similarity for each chunk
-		const chunkResults: ChunkSearchResult[] = [];
+		const results: SemanticSearchResult[] = [];
 
 		for (const chunk of chunksWithEmbeddings) {
 			const similarity = cosineSimilarity(queryEmbedding, chunk.vector);
 
 			if (similarity >= DEFAULT_MIN_SIMILARITY) {
-				chunkResults.push({
+				results.push({
 					chunkId: chunk.chunkId,
 					noteId: chunk.noteId,
-					noteTitle: chunk.noteTitle,
+					title: chunk.noteTitle,
 					filePath: chunk.filePath,
 					heading: chunk.heading,
-					headingLevel: chunk.headingLevel,
-					content: chunk.content,
 					startLine: chunk.startLine,
 					similarity,
 				});
 			}
 		}
 
-		// Aggregate chunk results by note (take best chunk per note)
-		const noteMap = new Map<string, SemanticSearchResult>();
-		for (const chunk of chunkResults) {
-			const existing = noteMap.get(chunk.noteId);
-			if (!existing || chunk.similarity > existing.similarity) {
-				noteMap.set(chunk.noteId, {
-					noteId: chunk.noteId,
-					title: chunk.noteTitle,
-					filePath: chunk.filePath,
-					similarity: chunk.similarity,
-				});
-			}
-		}
-
-		// Convert to array and sort
-		const results = Array.from(noteMap.values());
+		// Sort by similarity descending
 		results.sort((a, b) => b.similarity - a.similarity);
 		return results.slice(0, limit);
 	}

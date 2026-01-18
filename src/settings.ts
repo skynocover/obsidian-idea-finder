@@ -24,8 +24,9 @@ export const DEFAULT_SEARCH_WEIGHTS: SearchWeights = {
 
 export interface IdeaFinderSettings {
 	jinaApiKey: string;
-	keywordWeight: number;
-	semanticWeight: number;
+	keywordWeight: number; // 0-1, weight for keyword search
+	semanticWeight: number; // 0-1, weight for semantic search
+	searchThreshold: number; // Minimum score % to show in search results
 	similarityThreshold: number; // Minimum similarity % to show in similar notes
 	folderFilter: FolderFilterSettings;
 	searchWeights: SearchWeights;
@@ -36,6 +37,7 @@ export const DEFAULT_SETTINGS: IdeaFinderSettings = {
 	jinaApiKey: "",
 	keywordWeight: 0.3,
 	semanticWeight: 0.7,
+	searchThreshold: 10, // 10% minimum search score
 	similarityThreshold: 30, // 30% minimum similarity
 	folderFilter: {
 		folders: [],
@@ -70,7 +72,7 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Jina API Key")
-			.setDesc("Enter your Jina AI API key for semantic search and embeddings")
+			.setDesc("Enter your Jina AI API key for embeddings (used by Similar Notes)")
 			.addText((text) =>
 				text
 					.setPlaceholder("jina_xxxxxxxxxxxxxxxx")
@@ -87,42 +89,7 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 		const apiKeyHelp = containerEl.createEl("p", {
 			cls: "setting-item-description",
 		});
-		apiKeyHelp.innerHTML = `Get your API key from <a href="https://jina.ai/">jina.ai</a>. Required for semantic search and similar notes features.`;
-
-		// Search Settings Section
-		containerEl.createEl("h3", { text: "Search Settings" });
-
-		// Weight display element
-		const weightDisplayEl = containerEl.createDiv({ cls: "vibe-weight-display" });
-		const updateWeightDisplay = () => {
-			const kw = Math.round(this.plugin.settings.keywordWeight * 100);
-			const sem = Math.round(this.plugin.settings.semanticWeight * 100);
-			weightDisplayEl.setText(`Keyword ${kw}% + Semantic ${sem}%`);
-		};
-		updateWeightDisplay();
-
-		// Keyword weight with number input
-		new Setting(containerEl)
-			.setName("Keyword Weight (%)")
-			.setDesc("Adjust keyword vs semantic search weight (0-100)")
-			.addText((text) => {
-				text.inputEl.type = "number";
-				text.inputEl.min = "0";
-				text.inputEl.max = "100";
-				text.inputEl.style.width = "60px";
-				text
-					.setPlaceholder("30")
-					.setValue(String(Math.round(this.plugin.settings.keywordWeight * 100)))
-					.onChange(async (value) => {
-						const num = parseInt(value, 10);
-						if (!isNaN(num) && num >= 0 && num <= 100) {
-							this.plugin.settings.keywordWeight = num / 100;
-							this.plugin.settings.semanticWeight = (100 - num) / 100;
-							await this.plugin.saveSettings();
-							updateWeightDisplay();
-						}
-					});
-			});
+		apiKeyHelp.innerHTML = `Get your API key from <a href="https://jina.ai/">jina.ai</a>. Required for Similar Notes feature.`;
 
 		// Folder Filter Settings Section
 		containerEl.createEl("h3", { text: "Exclude Folders" });
@@ -167,7 +134,7 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 			cls: "setting-item-description",
 		});
 		chunkingHelp.setText(
-			"Split notes into smaller chunks by headings for more precise semantic search results."
+			"Split notes into smaller chunks by headings for more precise search results."
 		);
 
 		// Max Heading Level (1-6)
@@ -215,6 +182,71 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 						const num = parseInt(value, 10);
 						if (!isNaN(num) && num >= 0 && num <= 100) {
 							this.plugin.settings.similarityThreshold = num;
+							await this.plugin.saveSettings();
+						}
+					});
+			});
+
+		// Search Settings Section
+		containerEl.createEl("h3", { text: "Search Settings" });
+
+		// Weight slider container
+		const weightContainer = containerEl.createDiv({ cls: "idea-finder-weight-container" });
+
+		// Weight display
+		const weightDisplay = weightContainer.createDiv({ cls: "idea-finder-weight-display" });
+		const keywordLabel = weightDisplay.createSpan({ cls: "idea-finder-weight-label keyword" });
+		const semanticLabel = weightDisplay.createSpan({ cls: "idea-finder-weight-label semantic" });
+
+		const updateWeightDisplay = () => {
+			const kw = Math.round(this.plugin.settings.keywordWeight * 100);
+			const sem = Math.round(this.plugin.settings.semanticWeight * 100);
+			keywordLabel.setText(`Keyword ${kw}%`);
+			semanticLabel.setText(`Semantic ${sem}%`);
+		};
+		updateWeightDisplay();
+
+		// Slider setting
+		new Setting(weightContainer)
+			.setName("Search Weight Balance")
+			.setDesc("Drag left for more keyword weight, drag right for more semantic weight")
+			.addSlider((slider) => {
+				slider
+					.setLimits(0, 100, 5)
+					.setValue(Math.round(this.plugin.settings.semanticWeight * 100))
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.semanticWeight = value / 100;
+						this.plugin.settings.keywordWeight = (100 - value) / 100;
+						updateWeightDisplay();
+						await this.plugin.saveSettings();
+					});
+				slider.sliderEl.style.width = "100%";
+			});
+
+		// Add some styling inline
+		weightDisplay.style.display = "flex";
+		weightDisplay.style.justifyContent = "space-between";
+		weightDisplay.style.marginBottom = "8px";
+		weightDisplay.style.fontWeight = "500";
+		keywordLabel.style.color = "var(--text-accent)";
+		semanticLabel.style.color = "var(--interactive-accent)";
+
+		new Setting(containerEl)
+			.setName("Search Threshold (%)")
+			.setDesc("Minimum match percentage to show in search results (0-100)")
+			.addText((text) => {
+				text.inputEl.type = "number";
+				text.inputEl.min = "0";
+				text.inputEl.max = "100";
+				text.inputEl.style.width = "60px";
+				text
+					.setPlaceholder("10")
+					.setValue(String(this.plugin.settings.searchThreshold))
+					.onChange(async (value) => {
+						const num = parseInt(value, 10);
+						if (!isNaN(num) && num >= 0 && num <= 100) {
+							this.plugin.settings.searchThreshold = num;
 							await this.plugin.saveSettings();
 						}
 					});
