@@ -348,8 +348,36 @@ export class SearchModal extends SuggestModal<ChunkSearchResult> {
 		// Normalize keyword scores (0-1)
 		const kwScores = keywordResults.map((r) => r.score);
 		const kwMax = Math.max(...kwScores, 1);
-
 		const normalizeKeyword = (score: number): number => score / kwMax;
+
+		// Apply weights to keyword results BEFORE merging (方案 A)
+		// This ensures weights only affect keyword portion, not semantic
+		let weightedKwMap = new Map<string, { score: number; backlinkCount: number; tagMatchCount: number }>();
+
+		if (this.searchWeightService && keywordResults.length > 0) {
+			const kwResultsForWeighting = keywordResults.map((r) => ({
+				noteId: r.noteId,
+				title: r.title,
+				filePath: r.filePath,
+				score: normalizeKeyword(r.score),
+				snippet: r.snippet,
+			}));
+
+			const weightedResults = this.searchWeightService.applyWeights(kwResultsForWeighting, query);
+			const normalizedResults = this.searchWeightService.normalizeScores(weightedResults);
+
+			// Map weighted scores back to chunkId
+			for (const r of keywordResults) {
+				const weighted = normalizedResults.find((w) => w.noteId === r.noteId);
+				if (weighted) {
+					weightedKwMap.set(r.chunkId, {
+						score: weighted.weightedScore,
+						backlinkCount: weighted.backlinkCount,
+						tagMatchCount: weighted.tagMatchCount,
+					});
+				}
+			}
+		}
 
 		// Calculate hybrid scores
 		const results: ChunkSearchResult[] = [];
@@ -358,10 +386,14 @@ export class SearchModal extends SuggestModal<ChunkSearchResult> {
 			const kwResult = keywordMap.get(chunkId);
 			const semResult = semanticMap.get(chunkId);
 
-			const kwScore = kwResult ? normalizeKeyword(kwResult.score) : null;
+			// Use weighted keyword score if available, otherwise use normalized score
+			const weightedKw = weightedKwMap.get(chunkId);
+			const kwScore = kwResult
+				? (weightedKw?.score ?? normalizeKeyword(kwResult.score))
+				: null;
 			const semScore = semResult ? semResult.similarity : null;
 
-			// Calculate final score
+			// Calculate final score: weighted_kw × kwWeight + sem × semWeight
 			let finalScore: number;
 			if (kwScore !== null && semScore !== null) {
 				finalScore =
@@ -386,37 +418,9 @@ export class SearchModal extends SuggestModal<ChunkSearchResult> {
 				startLine: kwResult?.startLine || semResult?.startLine || 0,
 				keywordScore: kwScore,
 				semanticScore: semScore,
+				backlinkCount: weightedKw?.backlinkCount,
+				tagMatchCount: weightedKw?.tagMatchCount,
 			});
-		}
-
-		// Apply search weights if service is available
-		if (this.searchWeightService) {
-			const weightedResults = this.searchWeightService.applyWeights(
-				results.map((r) => ({
-					noteId: r.noteId,
-					title: r.title,
-					filePath: r.filePath,
-					score: r.score,
-					snippet: r.snippet,
-				})),
-				query
-			);
-
-			const normalizedResults = this.searchWeightService.normalizeScores(weightedResults);
-			const normalizedMap = new Map(normalizedResults.map((r) => [r.noteId, r]));
-
-			return results.map((r) => {
-				const normalized = normalizedMap.get(r.noteId);
-				return {
-					...r,
-					score: normalized?.weightedScore ?? r.score,
-					backlinkCount: normalized?.backlinkCount,
-					tagMatchCount: normalized?.tagMatchCount,
-				};
-			})
-				.filter((r) => r.score >= threshold)
-				.sort((a, b) => b.score - a.score)
-				.slice(0, 20);
 		}
 
 		// Sort by score and filter by threshold

@@ -77,6 +77,18 @@ In settings, adjust the keyword/semantic weight ratio:
 
 Default: 30% keyword, 70% semantic
 
+### Search Ranking Weights
+
+Fine-tune how keyword results are ranked with these multipliers:
+
+| Weight | Effect |
+|--------|--------|
+| Title | Boost notes where query appears in title |
+| Backlink | Boost notes with more incoming links |
+| Tag | Boost notes with matching tags |
+
+These weights only affect keyword search scores before merging with semantic scores. Semantic ranking remains pure similarity-based.
+
 ### Similar Notes Panel
 
 - Opens automatically in the right sidebar
@@ -100,6 +112,9 @@ Default: 30% keyword, 70% semantic
 | Jina API Key | Required for semantic features | - |
 | Keyword Weight | Balance between search modes | 30% |
 | Similarity Threshold | Minimum similarity for related notes | 30% |
+| Title Weight | Boost for title matches (keyword only) | 2.0 |
+| Backlink Weight | Boost per incoming link (keyword only) | 1.5 |
+| Tag Weight | Boost per matching tag (keyword only) | 1.0 |
 | Auto-maintain Embeddings | Regenerate embeddings on file changes | On |
 | Folder Filter | Include/exclude specific folders | - |
 
