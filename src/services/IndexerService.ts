@@ -59,7 +59,7 @@ export class IndexerService {
 		noteRepo: NoteRepository,
 		saveCallback: () => Promise<void>,
 		callbacks: IndexerCallbacks = {},
-		options: IndexerOptions = { getFolderFilter: () => ({ mode: "exclude", folders: [] }) },
+		options: IndexerOptions = { getFolderFilter: () => ({ folders: [] }) },
 		metadataRepo: MetadataRepository | null = null,
 		chunkRepo: ChunkRepository | null = null,
 		vectorRepo: VectorRepository | null = null,
@@ -76,7 +76,7 @@ export class IndexerService {
 		this.logger = logger;
 
 		// Initialize markdown parser with default options
-		const chunkingOpts = this.options.getChunkingOptions?.() ?? { maxHeadingLevel: 2, minChunkLength: 50 };
+		const chunkingOpts = this.options.getChunkingOptions?.() ?? { maxHeadingLevel: 2 };
 		this.markdownParser = new MarkdownParser(chunkingOpts);
 
 		// Initialize progressive indexing options

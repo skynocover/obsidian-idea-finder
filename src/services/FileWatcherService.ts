@@ -40,7 +40,7 @@ export class FileWatcherService {
 	constructor(
 		app: App,
 		callbacks: FileWatcherCallbacks = {},
-		options: FileWatcherOptions = { getFolderFilter: () => ({ mode: "exclude", folders: [] }) },
+		options: FileWatcherOptions = { getFolderFilter: () => ({ folders: [] }) },
 		logger: Logger | null = null
 	) {
 		this.app = app;

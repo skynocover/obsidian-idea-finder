@@ -97,10 +97,10 @@
 - [x] **3.4 編譯測試**
   - 執行 `npm run build` 確保無編譯錯誤
 
-- [ ] **3.5 功能測試**
-  - [ ] 確認 Settings UI 沒有 Auto-maintain toggle
-  - [ ] 修改一個已有 embedding 的檔案，確認不會自動觸發 embedding 更新
-  - [ ] 確認手動 Generate Embeddings 仍然正常運作
+- [x] **3.5 功能測試**
+  - [x] 確認 Settings UI 沒有 Auto-maintain toggle
+  - [x] 修改一個已有 embedding 的檔案，確認不會自動觸發 embedding 更新
+  - [x] 確認手動 Generate Embeddings 仍然正常運作
 
 ---
 
@@ -110,69 +110,69 @@
 
 ### 任務清單
 
-- [ ] **4.1 修改 VectorRepository.ts**
+- [x] **4.1 修改 VectorRepository.ts**
   - 移除所有 Note-level embeddings 相關方法:
     - `upsertNoteEmbedding()`
     - `getNoteEmbedding()`
     - `getAllNoteEmbeddingsWithNotes()`
     - `getNotesNeedingEmbedding()`
-    - `getNoteEmbeddingCounts()`
+    - `getNoteEmbeddingCounts()` (重新實作為統計 notes with chunk embeddings)
     - `deleteNoteEmbedding()`
     - `deleteNoteEmbeddings()`
     - `hasAnyNoteEmbeddings()`
   - 修改 `hasAnyEmbeddings()` 只檢查 chunk embeddings
   - 修改 `getEmbeddingCounts()` 只返回 chunk counts
 
-- [ ] **4.2 修改 EmbeddingService.ts**
+- [x] **4.2 修改 EmbeddingService.ts**
   - 移除 `generateAll()` 方法 (note-level embedding generation)
   - 將 `generateChunkEmbeddings()` 改名為 `generateAll()`
 
-- [ ] **4.3 修改 VectorService.ts**
+- [x] **4.3 修改 VectorService.ts**
   - 移除 `searchByQuery()` (note-level search)
   - 移除舊的 `getSimilarNotes()` (基於 note embedding)
   - 移除 `hasEmbedding()` (檢查 note embedding)
   - 移除 `getStats()` (返回 note stats)
   - 修改 `smartSearch()` → 重命名為 `search()`，直接使用 chunk search
-  - **新增**: `getSimilarNotes(noteId)` - 基於當前 note 的所有 chunks 找相似 notes
+  - **新增**: `getSimilarChunks(noteId)` - 基於當前 note 的所有 chunks 找相似 chunks
     - 取得該 note 的所有 chunk embeddings
     - 對每個 chunk 找相似的其他 note 的 chunks
-    - 聚合結果，取每個 note 的最高相似度
+    - 聚合結果，取每個 chunk 的最高相似度
     - 排除自己，返回排序後的結果
   - **新增**: `hasEmbeddings(noteId)` - 檢查該 note 是否有任何 chunk embeddings
 
-- [ ] **4.4 修改 SimilarNotesView.ts**
+- [x] **4.4 修改 SimilarNotesView.ts**
   - 修改 `vectorService.hasEmbedding()` → `vectorService.hasEmbeddings()`
-  - 使用新的 chunk-based `getSimilarNotes()`
+  - 使用新的 chunk-based `getSimilarChunks()`
 
-- [ ] **4.5 修改 SearchModal.ts**
+- [x] **4.5 修改 SearchModal.ts**
   - 更新 `smartSearch` → `search` 的呼叫
 
-- [ ] **4.6 修改 main.ts**
+- [x] **4.6 修改 main.ts**
   - `generate-embeddings` command 已呼叫 `generateAll()`（現在是 chunk embeddings）
   - SimilarNotesView 的 `onGenerateEmbeddings` callback 確認呼叫正確
 
-- [ ] **4.7 修改 types.ts**
+- [x] **4.7 修改 types.ts**
   - 移除 `Embedding` interface
   - 移除 `NoteWithEmbedding` interface
 
-- [ ] **4.8 修改 sql-types.ts**
+- [x] **4.8 修改 sql-types.ts**
   - 移除 `EmbeddingRow` type
   - 移除 `NoteWithEmbeddingRow` type
 
-- [ ] **4.9 修改 IndexerService.ts**
-  - 移除 `removeFile()` 中的 `this.vectorRepo.deleteNoteEmbedding(note.id)` (第376-378行)
-  - 移除 `cleanupDeletedFiles()` 中的 `this.vectorRepo.deleteNoteEmbeddings(noteIdsToDelete)` (第532-534行)
+- [x] **4.9 修改 IndexerService.ts**
+  - 移除 `removeFile()` 中的 `this.vectorRepo.deleteNoteEmbedding(note.id)`
+  - 移除 `cleanupDeletedFiles()` 中的 `this.vectorRepo.deleteNoteEmbeddings(noteIdsToDelete)`
 
 ### 測試
 
-- [ ] **4.10 編譯測試**
+- [x] **4.10 編譯測試**
   - 執行 `npm run build` 確保無編譯錯誤
 
-- [ ] **4.11 功能測試**
-  - [ ] Generate Embeddings 產生 chunk embeddings
-  - [ ] Search 功能正常 (keyword + semantic hybrid)
-  - [ ] Similar Notes 顯示基於 chunk 的相似筆記
-  - [ ] 刪除檔案後，相關 chunk embeddings 被清理
+- [x] **4.11 功能測試**
+  - [x] Generate Embeddings 產生 chunk embeddings
+  - [x] Search 功能正常 (keyword + semantic hybrid)
+  - [x] Similar Notes 顯示基於 chunk 的相似筆記
+  - [x] 刪除檔案後，相關 chunk embeddings 被清理
 
 ---
 
@@ -182,29 +182,29 @@
 
 ### 任務清單
 
-- [ ] **5.1 修改 settings.ts - 移除 Indexed Notes 顯示**
-  - 移除 `renderStatus()` 中的 "Indexed Notes" Setting (第516-518行)
+- [x] **5.1 修改 settings.ts - 移除 Indexed Notes 顯示**
+  - 移除 `renderStatus()` 中的 "Indexed Notes" Setting
 
-- [ ] **5.2 修改 settings.ts - 簡化 Embeddings 顯示**
-  - 移除 "Note Embeddings" 顯示 (第521-526行)
+- [x] **5.2 修改 settings.ts - 簡化 Embeddings 顯示**
+  - 移除 "Note Embeddings" 顯示
   - 將 "Chunk Embeddings" 改名為 "Embeddings"
-  - 移除 "Generate Note Embeddings" 按鈕 (第83-124行)
+  - 移除 "Generate Note Embeddings" 按鈕
   - 將 "Generate Chunk Embeddings" 按鈕改名為 "Generate Embeddings"
 
-- [ ] **5.3 確認 SimilarNotesView.ts 的 pending 提示**
+- [x] **5.3 確認 SimilarNotesView.ts 的 pending 提示**
   - 確認 `updateStatus()` 正確顯示 pending chunk embeddings 數量
   - 確認 Generate 按鈕呼叫正確的 generation 方法
 
 ### 測試
 
-- [ ] **5.4 編譯測試**
+- [x] **5.4 編譯測試**
   - 執行 `npm run build` 確保無編譯錯誤
 
-- [ ] **5.5 功能測試**
-  - [ ] Settings 只顯示 "Embeddings" 狀態（不顯示 Indexed Notes）
-  - [ ] Settings 只有一個 "Generate Embeddings" 按鈕
-  - [ ] Similar Notes panel 顯示正確的 pending 數量
-  - [ ] 新增檔案後，pending 數量增加
+- [x] **5.5 功能測試**
+  - [x] Settings 只顯示 "Embeddings" 狀態（不顯示 Indexed Notes）
+  - [x] Settings 只有一個 "Generate Embeddings" 按鈕
+  - [x] Similar Notes panel 顯示正確的 pending 數量
+  - [x] 新增檔案後，pending 數量增加
 
 ---
 
@@ -214,18 +214,19 @@
 
 ### 任務清單
 
-- [ ] **6.1 清理程式碼**
+- [x] **6.1 清理程式碼**
   - 移除未使用的 imports
   - 移除未使用的 types
   - 檢查是否有遺留的 note embedding 相關程式碼
+  - 修正 IndexerService.ts 和 FileWatcherService.ts 中的 default options
 
-- [ ] **6.2 更新 CLAUDE.md**
+- [x] **6.2 更新 CLAUDE.md**
   - 移除 `embeddings` table 相關說明（或標記為 deprecated）
   - 更新 Settings 說明（移除 autoMaintainEmbeddings、minChunkLength、folderFilter.mode）
   - 更新 Service 說明（移除 EmbeddingMaintenanceService）
   - 更新 VectorService 說明（chunk-based search/similar）
 
-- [ ] **6.3 最終驗證**
+- [x] **6.3 最終驗證**
   - 執行 `npm run build` 確保無編譯錯誤
   - 完整流程測試：Index → Generate Embeddings → Search → Similar Notes
 
