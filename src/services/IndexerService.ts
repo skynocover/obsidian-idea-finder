@@ -547,4 +547,35 @@ export class IndexerService {
 	isCurrentlyIndexing(): boolean {
 		return this.isIndexing;
 	}
+
+	/**
+	 * Sync missing files that exist in vault but not in database.
+	 * This handles files created while the plugin was disabled or via external sync.
+	 * Returns the number of files indexed.
+	 */
+	async syncMissingFiles(): Promise<number> {
+		const allFiles = this.app.vault.getMarkdownFiles();
+		const files = allFiles.filter((file) => !this.isPathFiltered(file.path));
+
+		// Get all indexed file paths
+		const indexedPaths = new Set(this.noteRepo.getAllNotes().map((n) => n.filePath));
+
+		// Find missing files
+		const missingFiles = files.filter((file) => !indexedPaths.has(file.path));
+
+		if (missingFiles.length === 0) {
+			return 0;
+		}
+
+		this.logger?.info(`Indexer: Found ${missingFiles.length} missing files, syncing...`);
+
+		for (const file of missingFiles) {
+			await this.indexFile(file);
+		}
+
+		await this.saveCallback();
+		this.logger?.info(`Indexer: Synced ${missingFiles.length} missing files`);
+
+		return missingFiles.length;
+	}
 }

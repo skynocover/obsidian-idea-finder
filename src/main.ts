@@ -174,12 +174,22 @@ export default class IdeaFinderPlugin extends Plugin {
 			// Start file watcher
 			this.fileWatcherService.startWatching();
 
-			// Auto-index on first load if no notes indexed (uses progressive indexing)
+			// Auto-index on first load or sync missing files
 			const stats = this.indexerService.getStats();
 			if (stats.totalNotes === 0) {
+				// First time: full progressive index
 				setTimeout(async () => {
 					showProgress("Idea Finder: Starting initial index...");
 					await this.indexerService.indexAllProgressive();
+				}, 2000);
+			} else {
+				// Subsequent loads: sync any missing files (created while plugin was disabled)
+				setTimeout(async () => {
+					const synced = await this.indexerService.syncMissingFiles();
+					if (synced > 0) {
+						showInfo(`Idea Finder: Synced ${synced} new files`);
+						await this.textSearchService.rebuild();
+					}
 				}, 2000);
 			}
 		} catch (error) {

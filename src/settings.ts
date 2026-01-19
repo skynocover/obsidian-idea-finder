@@ -375,15 +375,82 @@ export class IdeaFinderSettingTab extends PluginSettingTab {
 		if (!this.statusContainer) return;
 		this.statusContainer.empty();
 
-		const counts = this.plugin.vectorRepo?.getNoteEmbeddingCounts();
+		// Get vault file count (excluding filtered folders)
+		const allFiles = this.app.vault.getMarkdownFiles();
+		const filteredFiles = allFiles.filter((file) => {
+			const folders = this.plugin.settings.folderFilter.folders;
+			if (folders.length === 0) return true;
+			return !folders.some((folder) => {
+				if (folder === "/") {
+					return !file.path.includes("/");
+				}
+				return file.path.startsWith(folder + "/") || file.path === folder;
+			});
+		});
+		const vaultFileCount = filteredFiles.length;
 
-		// Embeddings count
+		// Get indexed note count
+		const indexedCount = this.plugin.noteRepo?.getAllNotes().length ?? 0;
+
+		// Get embedding counts
+		const embeddingCounts = this.plugin.vectorRepo?.getNoteEmbeddingCounts();
+
+		// Index status
+		new Setting(this.statusContainer)
+			.setName("Index")
+			.setDesc(`${indexedCount}/${vaultFileCount} notes indexed`)
+			.addButton((button) =>
+				button
+					.setButtonText("Rebuild Index")
+					.onClick(async () => {
+						button.setDisabled(true);
+						button.setButtonText("Rebuilding...");
+						try {
+							await this.plugin.indexerService?.indexAll();
+							await this.plugin.textSearchService?.rebuild();
+							this.renderStatus();
+						} finally {
+							button.setDisabled(false);
+							button.setButtonText("Rebuild Index");
+						}
+					})
+			);
+
+		// Embeddings status
 		new Setting(this.statusContainer)
 			.setName("Embeddings")
 			.setDesc(
-				counts
-					? `${counts.embedded}/${counts.total} notes`
+				embeddingCounts
+					? `${embeddingCounts.embedded}/${embeddingCounts.total} notes`
 					: "Not initialized"
+			)
+			.addButton((button) =>
+				button
+					.setButtonText("Generate")
+					.onClick(async () => {
+						if (!this.plugin.settings.jinaApiKey) {
+							// Show warning if no API key
+							const warning = this.statusContainer?.createEl("p", {
+								text: "Please configure your Jina API key first",
+								cls: "mod-warning",
+							});
+							setTimeout(() => warning?.remove(), 3000);
+							return;
+						}
+						if (this.plugin.embeddingService?.isGenerating()) {
+							return;
+						}
+						button.setDisabled(true);
+						button.setButtonText("Generating...");
+						try {
+							await this.plugin.embeddingService?.generateAll();
+							await this.plugin.dbManager?.save();
+							this.renderStatus();
+						} finally {
+							button.setDisabled(false);
+							button.setButtonText("Generate");
+						}
+					})
 			);
 	}
 }

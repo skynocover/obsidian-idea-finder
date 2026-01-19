@@ -138,6 +138,15 @@ These weights only affect keyword search scores before merging with semantic sco
 2. Verify API key is correct
 3. Ensure embeddings are generated
 
+### Note not indexed
+
+If a note shows "This note is not indexed yet":
+
+1. **Quick fix**: Restart the plugin (disable → enable) or restart Obsidian
+   - The plugin automatically syncs missing files on startup
+2. **Full resync**: Run "Idea Finder: Rebuild index" command
+   - This rescans all files and updates the database
+
 ### Database errors
 
 The plugin auto-recovers from corruption. If issues persist:
